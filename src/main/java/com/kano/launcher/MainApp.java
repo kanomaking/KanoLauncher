@@ -654,24 +654,21 @@ public class MainApp extends Application {
         return grip;
     }
 
-    /** Dim king-render watermark behind the content. No-op if king-bg.png isn't present in resources. */
+    /** Dim king-render watermark, contained in the bottom-right corner so it never covers the UI.
+     *  No-op if king-bg.png isn't present in resources. */
     private Node buildBackground(Region panel) {
         var url = getClass().getResource("king-bg.png");
         if (url == null) return null;
         ImageView iv = new ImageView(new Image(url.toExternalForm()));
         iv.setPreserveRatio(true);
-        iv.setOpacity(0.12);
-        iv.fitHeightProperty().bind(panel.heightProperty());
+        iv.setFitHeight(300);
+        iv.setOpacity(0.10);
+        iv.setMouseTransparent(true);
         StackPane holder = new StackPane(iv);
-        StackPane.setAlignment(iv, Pos.CENTER_RIGHT);
-        StackPane.setMargin(iv, new Insets(0, -30, 0, 0));
-        Rectangle clip = new Rectangle();
-        clip.setArcWidth(40);
-        clip.setArcHeight(40);
-        clip.widthProperty().bind(holder.widthProperty());
-        clip.heightProperty().bind(holder.heightProperty());
-        holder.setClip(clip);
+        StackPane.setAlignment(iv, Pos.BOTTOM_RIGHT);
+        StackPane.setMargin(iv, new Insets(0, 26, 22, 0));
         holder.setMouseTransparent(true);
+        holder.setPickOnBounds(false);
         return holder;
     }
 
