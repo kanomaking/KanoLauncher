@@ -267,6 +267,12 @@ The launcher should make Minecraft run as fast as possible out of the box — hi
 - 🟢 **Stats bar (bottom of launcher)**: track + display total hours played and worlds created.
 - 🟡 **Privacy mode hotkey**: instantly minimize all game windows + mute game audio, restoring a neutral desktop.
 
+### In-game look (matching the launcher)
+The launcher can't theme Minecraft's OS window frame or 3D rendering (separate process/engine), but it can make the in-game UI feel consistent:
+- 🟡 **Kano resource pack** — a bundled pack that restyles in-game menus (buttons, panels, fonts, backgrounds) in red/black/gold, auto-applied/enabled on new instances so the title screen, pause menu, and inventory match the launcher.
+- 🟢 **Launcher window/taskbar icon = the king** (done — uses `king-avatar.png` if present, else `king-bg.png`).
+- 🔴 **Game window icon** = the king: harder — Minecraft sets its own window icon from its assets; overriding needs an asset swap or a small mod. Defer.
+
 ### Hard / research-flagged (high payoff, real complexity)
 - 🔴 **Instance-aware mod profiles (per-world / per-server)**: within one instance, define "mod sets" that auto-activate based on the world loaded or server joined (e.g. full questing pack solo, lean perf/QoL set on a server) — no duplicate instances. **Why it's hard:** requires per-launch mod-folder swapping or a custom loader injector; activating "on server connect" mid-session is the genuinely hard part (likely simplified to *choose a profile at launch* for v1 of this feature).
 - 🔴 **Live instance dashboard**: real-time FPS / memory / GC pause / network graphs while the game runs. **Why it's hard:** the launcher can't see inside the game process — needs a small companion mod (per loader/version) feeding telemetry back over a local socket. This is the same per-loader/per-version maintenance treadmill flagged for the in-game overlay (§4.10); reuse one telemetry mod rather than building bespoke per version.

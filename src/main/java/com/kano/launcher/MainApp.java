@@ -116,6 +116,10 @@ public class MainApp extends Application {
 
         stage.initStyle(StageStyle.TRANSPARENT);
         stage.setTitle("KanoLauncher");
+        // Window / taskbar icon = the king (prefers a square avatar if present, else the render).
+        var iconUrl = getClass().getResource("king-avatar.png");
+        if (iconUrl == null) iconUrl = getClass().getResource("king-bg.png");
+        if (iconUrl != null) stage.getIcons().add(new Image(iconUrl.toExternalForm()));
         stage.setScene(scene);
         stage.setMinWidth(960);
         stage.setMinHeight(600);
