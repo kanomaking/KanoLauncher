@@ -303,7 +303,11 @@ The launcher is a working JavaFX app (`gradlew run`). Implemented and verified:
 
 **Customization:** changeable launcher name; **full accent theming** (every accent color — solid, glow, border, tint — flows from looked-up CSS vars set live by `applyTheme()`); 5 presets + **custom color picker**; **background image upload + size + visibility sliders**; Ctrl+K command palette; themed dialogs; stats bar (worlds/playtime/launches). Maximize keeps the taskbar visible.
 
-**Other:** self-update banner (GitHub release check, notify-only). Visual polish: subtle 170ms fade-in on every view swap, card hover-lift (border glow + 1px raise), stronger filled-button hover glow.
+**Playing Now:** a sidebar tab listing every running game (grouped by player, then version) with live uptime and a **Kill** button; instances show a green "● Running" indicator on their card + detail header. The sidebar entry shows a live count.
+
+**Performance:** launch no longer re-hashes already-cached files every start — libraries/natives/assets/Forge libs are immutable, so they're verified once on download then trusted on existence (`Downloader.downloadIfAbsent`). Big startup speedup, especially for Forge's large classpath. The Performance Pack is now **loader-aware** (Embeddium + FerriteCore/ModernFix/EntityCulling/ImmediatelyFast/DynamicFPS for Forge/NeoForge; Sodium-family for Fabric — verified all 6 resolve for NeoForge 1.21.1) and its button is gold/yellow.
+
+**Other:** self-update banner (GitHub release check, notify-only). Instance custom image (upload → `icon.png`, shown on card + detail). World **Create Backup** (timestamped zip, keeps newest 3 per world) + Restore. OptiFine setup now auto-installs OptiFabric from Modrinth (best-effort) and gives clickable download links (OptiFine itself is gated on optifine.net). Open Folder / Clone / Export surfaced in the instance detail header. **Expanded settings:** global defaults (default RAM, default loader, minimize-on-play, confirm-before-delete) + appearance (10 theme presets, custom color, animations toggle, background image + sliders). Visual polish: 170ms view fade-in (toggleable), card hover-lift, filled-button hover glow.
 
 **Drafted, NOT yet integrated** (agent-produced, pending): scheduled tasks, live dashboard, packaging (.msi/.deb via jpackage — needs WiX + jmods + icons).
 

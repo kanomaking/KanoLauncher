@@ -19,6 +19,11 @@ public final class Config {
     private String themeAccent = "#D32F2F";
     private double bgScale = 540;
     private double bgOpacity = 0.30;
+    private int defaultRamMb = 4096;
+    private String defaultLoader = "FABRIC";
+    private boolean minimizeOnPlay = false;
+    private boolean confirmDelete = true;
+    private boolean animations = true;
 
     public Config(Path dataDir) {
         this.file = dataDir.resolve("config.json");
@@ -79,6 +84,26 @@ public final class Config {
 
     public void setBgOpacity(double v) { this.bgOpacity = v; save(); }
 
+    public int defaultRamMb() { return defaultRamMb <= 0 ? 4096 : defaultRamMb; }
+
+    public void setDefaultRamMb(int v) { this.defaultRamMb = v; save(); }
+
+    public String defaultLoader() { return defaultLoader == null || defaultLoader.isBlank() ? "FABRIC" : defaultLoader; }
+
+    public void setDefaultLoader(String v) { this.defaultLoader = v == null || v.isBlank() ? "FABRIC" : v; save(); }
+
+    public boolean minimizeOnPlay() { return minimizeOnPlay; }
+
+    public void setMinimizeOnPlay(boolean v) { this.minimizeOnPlay = v; save(); }
+
+    public boolean confirmDelete() { return confirmDelete; }
+
+    public void setConfirmDelete(boolean v) { this.confirmDelete = v; save(); }
+
+    public boolean animations() { return animations; }
+
+    public void setAnimations(boolean v) { this.animations = v; save(); }
+
     private void load() {
         try {
             if (Files.exists(file)) {
@@ -90,6 +115,11 @@ public final class Config {
                 if (o != null && o.has("themeAccent")) themeAccent = o.get("themeAccent").getAsString();
                 if (o != null && o.has("bgScale")) bgScale = o.get("bgScale").getAsDouble();
                 if (o != null && o.has("bgOpacity")) bgOpacity = o.get("bgOpacity").getAsDouble();
+                if (o != null && o.has("defaultRamMb")) defaultRamMb = o.get("defaultRamMb").getAsInt();
+                if (o != null && o.has("defaultLoader")) defaultLoader = o.get("defaultLoader").getAsString();
+                if (o != null && o.has("minimizeOnPlay")) minimizeOnPlay = o.get("minimizeOnPlay").getAsBoolean();
+                if (o != null && o.has("confirmDelete")) confirmDelete = o.get("confirmDelete").getAsBoolean();
+                if (o != null && o.has("animations")) animations = o.get("animations").getAsBoolean();
             }
         } catch (Exception ignored) {
         }
@@ -105,6 +135,11 @@ public final class Config {
             o.addProperty("themeAccent", themeAccent);
             o.addProperty("bgScale", bgScale);
             o.addProperty("bgOpacity", bgOpacity);
+            o.addProperty("defaultRamMb", defaultRamMb);
+            o.addProperty("defaultLoader", defaultLoader);
+            o.addProperty("minimizeOnPlay", minimizeOnPlay);
+            o.addProperty("confirmDelete", confirmDelete);
+            o.addProperty("animations", animations);
             Path tmp = file.resolveSibling("config.json.tmp");
             Files.writeString(tmp, new Gson().toJson(o), StandardCharsets.UTF_8);
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);

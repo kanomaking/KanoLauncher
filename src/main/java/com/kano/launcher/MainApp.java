@@ -38,6 +38,7 @@ import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
@@ -129,6 +130,11 @@ public class MainApp extends Application {
     private ContentSource browseSource = new ModrinthClient();
     private ImageView bgView;
 
+    // ---- running games (Playing Now) ----
+    private record RunningGame(Instance inst, Process proc, String player, long startEpoch) {}
+    private final Map<Long, RunningGame> running = new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicLong runId = new java.util.concurrent.atomic.AtomicLong();
+
     // ---- command palette (Ctrl+K) ----
     private StackPane paletteOverlay;
     private TextField paletteField;
@@ -163,6 +169,7 @@ public class MainApp extends Application {
 
         // Subtle fade-in whenever the main view swaps (every show*() does content.setAll).
         content.getChildren().addListener((javafx.collections.ListChangeListener<Node>) c -> {
+            if (config != null && !config.animations()) { content.setOpacity(1.0); return; }
             javafx.animation.FadeTransition ft = new javafx.animation.FadeTransition(Duration.millis(170), content);
             ft.setFromValue(0.0);
             ft.setToValue(1.0);
@@ -246,6 +253,11 @@ public class MainApp extends Application {
         THEMES.put("forest", new Theme("Forest", "#2E7D32", "#43A047", "#1B5E20"));
         THEMES.put("amethyst", new Theme("Amethyst", "#7B1FA2", "#9C27B0", "#4A148C"));
         THEMES.put("gold", new Theme("Gold", "#C9A227", "#E0B83A", "#9A7B16"));
+        THEMES.put("sunset", new Theme("Sunset", "#E65100", "#FB8C00", "#BF360C"));
+        THEMES.put("rose", new Theme("Rose", "#C2185B", "#E91E63", "#880E4F"));
+        THEMES.put("teal", new Theme("Teal", "#00838F", "#00ACC1", "#005662"));
+        THEMES.put("slate", new Theme("Slate", "#546E7A", "#78909C", "#37474F"));
+        THEMES.put("cyber", new Theme("Cyber", "#00BFA5", "#1DE9B6", "#00897B"));
     }
 
     private String resolveAccent() {
@@ -495,6 +507,7 @@ public class MainApp extends Application {
                 nav("⌂", "Home", this::showHome),
                 nav("▤", "Library", this::showLibrary),
                 nav("◰", "Instances", this::showInstances),
+                nav("▶", "Playing Now", this::showPlayingNow),
                 nav("❖", "Browse Mods", this::showBrowse),
                 nav("☺", "Skins", this::showSkins),
                 nav("⚙", "Settings", this::showSettings));
@@ -733,6 +746,89 @@ public class MainApp extends Application {
         t.start();
     }
 
+    // ---- Playing Now ----
+
+    private boolean isRunning(Instance inst) {
+        return running.values().stream().anyMatch(g -> g.inst().dirName().equals(inst.dirName()));
+    }
+
+    /** Update the sidebar count and, if the Playing Now page is open, re-render it. */
+    private void onRunningChanged() {
+        HBox navP = navByName.get("Playing Now");
+        if (navP != null && navP.getChildren().size() > 1 && navP.getChildren().get(1) instanceof Label lbl) {
+            int n = running.size();
+            lbl.setText(n > 0 ? "Playing Now (" + n + ")" : "Playing Now");
+        }
+        if (navP != null && navP.getStyleClass().contains("nav-item-active")) showPlayingNow();
+    }
+
+    private void showPlayingNow() {
+        selectNav(navByName.get("Playing Now"));
+        VBox page = new VBox(18);
+        page.getStyleClass().add("content");
+        Label title = new Label("Playing Now");
+        title.getStyleClass().add("page-title");
+
+        VBox body = new VBox(12);
+        List<RunningGame> games = new ArrayList<>(running.values());
+        games.sort(java.util.Comparator
+                .comparing((RunningGame g) -> g.player().toLowerCase())
+                .thenComparing(g -> g.inst().version()));
+        if (games.isEmpty()) {
+            Label none = new Label("No games running. Launch an instance and it shows up here.");
+            none.getStyleClass().add("muted");
+            body.getChildren().add(none);
+        } else {
+            String lastPlayer = null;
+            for (RunningGame g : games) {
+                if (!g.player().equals(lastPlayer)) {
+                    Label ph = new Label("👤  " + g.player());
+                    ph.getStyleClass().add("group-title");
+                    body.getChildren().add(ph);
+                    lastPlayer = g.player();
+                }
+                body.getChildren().add(runningCard(g));
+            }
+        }
+        ScrollPane scroll = new ScrollPane(body);
+        scroll.setFitToWidth(true);
+        scroll.getStyleClass().add("scroll-pane");
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        page.getChildren().addAll(title, scroll);
+        content.getChildren().setAll(page);
+    }
+
+    private Region runningCard(RunningGame g) {
+        Instance inst = g.inst();
+        StackPane iconTile = iconTile(inst, true);
+        Label name = new Label(inst.name());
+        name.getStyleClass().add("card-title-sm");
+        long mins = Math.max(0, (System.currentTimeMillis() - g.startEpoch()) / 60000);
+        Label sub = new Label("● Running   •   " + inst.version() + "  " + inst.loader().display()
+                + "   •   up " + mins + "m   •   " + g.player());
+        sub.getStyleClass().add("card-sub");
+        sub.setStyle("-fx-text-fill: #5bd75b;");
+        VBox info = new VBox(4, name, sub);
+        HBox.setHgrow(info, Priority.ALWAYS);
+
+        Button open = new Button("Open Folder");
+        open.getStyleClass().add("btn-outline");
+        open.setOnAction(e -> openFolder(instanceManager.instanceDir(inst)));
+        Button kill = new Button("⏻ Kill");
+        kill.getStyleClass().add("btn-outline");
+        kill.setOnAction(e -> {
+            g.proc().destroy();
+            g.proc().destroyForcibly();
+            // waitFor() in onPlay will unregister + refresh; nudge the view immediately too.
+            Platform.runLater(this::onRunningChanged);
+        });
+        HBox row = new HBox(14, iconTile, info, open, kill);
+        row.setAlignment(Pos.CENTER_LEFT);
+        StackPane card = new StackPane(row);
+        card.getStyleClass().add("card");
+        return card;
+    }
+
     private Region featuredCard(Instance inst) {
         StackPane iconTile = iconTile(inst, false);
         Label title = new Label(inst.name());
@@ -768,8 +864,9 @@ public class MainApp extends Application {
         title.getStyleClass().add("card-title-sm");
         Label meta = new Label(metaLine(inst));
         meta.getStyleClass().add("card-meta");
-        Label sub = new Label("Last played: " + lastPlayed(inst));
+        Label sub = new Label(isRunning(inst) ? "● Running now" : "Last played: " + lastPlayed(inst));
         sub.getStyleClass().add("card-sub");
+        if (isRunning(inst)) sub.setStyle("-fx-text-fill: #5bd75b;");
         ProgressBar bar = progress(0.0);
         VBox info = new VBox(4, title, meta, sub, bar);
         HBox.setHgrow(info, Priority.ALWAYS);
@@ -794,7 +891,18 @@ public class MainApp extends Application {
         StackPane tile = new StackPane();
         tile.getStyleClass().add("icon-tile");
         if (small) tile.getStyleClass().add("icon-tile-sm");
-        tile.setStyle("-fx-background-color: " + blockColor(inst.iconOrDefault()) + ";");
+        Path img = instanceManager != null ? instanceManager.instanceDir(inst).resolve("icon.png") : null;
+        if (img != null && Files.exists(img)) {
+            double sz = small ? 44 : 64;
+            ImageView iv = new ImageView(new Image(img.toUri().toString(), sz, sz, true, true));
+            Rectangle clip = new Rectangle(sz, sz);
+            clip.setArcWidth(12);
+            clip.setArcHeight(12);
+            iv.setClip(clip);
+            tile.getChildren().add(iv);
+        } else {
+            tile.setStyle("-fx-background-color: " + blockColor(inst.iconOrDefault()) + ";");
+        }
         return tile;
     }
 
@@ -840,12 +948,11 @@ public class MainApp extends Application {
         back.getStyleClass().add("nav-button");
         back.setOnAction(e -> showInstances());
 
-        StackPane icon = new StackPane();
-        icon.getStyleClass().add("icon-tile");
-        icon.setStyle("-fx-background-color: " + blockColor(inst.iconOrDefault()) + ";");
+        StackPane icon = iconTile(inst, false);
         Label name = new Label(inst.name());
         name.getStyleClass().add("page-title");
-        Label meta = new Label(metaLine(inst) + "    •    Last played: " + lastPlayed(inst));
+        Label meta = new Label(metaLine(inst) + "    •    "
+                + (isRunning(inst) ? "● Running now" : "Last played: " + lastPlayed(inst)));
         meta.getStyleClass().add("card-meta");
         VBox titleBox = new VBox(4, name, meta);
         Region grow = new Region();
@@ -861,6 +968,19 @@ public class MainApp extends Application {
 
         HBox header = new HBox(16, back, icon, titleBox, grow, playBox);
         header.setAlignment(Pos.CENTER_LEFT);
+
+        // Visible quick actions (also in Settings, but surfaced here so they're easy to find).
+        Button hOpen = new Button("Open Folder");
+        hOpen.getStyleClass().add("btn-outline");
+        hOpen.setOnAction(e -> openFolder(instanceManager.instanceDir(inst)));
+        Button hClone = new Button("Clone");
+        hClone.getStyleClass().add("btn-outline");
+        hClone.setOnAction(e -> cloneInstanceDialog(inst));
+        Button hExport = new Button("Export .mrpack");
+        hExport.getStyleClass().add("btn-outline");
+        hExport.setOnAction(e -> exportInstance(inst));
+        HBox actionRow = new HBox(10, hOpen, hClone, hExport);
+        actionRow.setAlignment(Pos.CENTER_LEFT);
 
         // Profile-icon picker
         Label profLbl = new Label("Profile Icon");
@@ -945,6 +1065,14 @@ public class MainApp extends Application {
         Button del = new Button("Delete Instance");
         del.getStyleClass().add("btn-outline");
         del.setOnAction(e -> {
+            if (config != null && config.confirmDelete()) {
+                Alert c = new Alert(Alert.AlertType.CONFIRMATION,
+                        "Delete “" + inst.name() + "”? This removes it from the launcher.",
+                        ButtonType.OK, ButtonType.CANCEL);
+                c.setHeaderText(null);
+                styleDialog(c);
+                if (c.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+            }
             try { instanceManager.delete(inst); showInstances(); }
             catch (Exception ex) { alert(Alert.AlertType.ERROR, "Delete failed", ex.getMessage()); }
         });
@@ -957,19 +1085,21 @@ public class MainApp extends Application {
         optHelp.getStyleClass().add("muted");
         optHelp.setWrapText(true);
 
-        Button openFolderBtn = new Button("Open Folder");
-        openFolderBtn.getStyleClass().add("btn-outline");
-        openFolderBtn.setOnAction(e -> openFolder(instanceManager.instanceDir(inst)));
-        Button cloneBtn = new Button("Clone");
-        cloneBtn.getStyleClass().add("btn-outline");
-        cloneBtn.setOnAction(e -> cloneInstanceDialog(inst));
-        Button exportBtn = new Button("Export .mrpack");
-        exportBtn.getStyleClass().add("btn-outline");
-        exportBtn.setOnAction(e -> exportInstance(inst));
-        HBox manageRow = new HBox(10, openFolderBtn, cloneBtn, exportBtn);
-        manageRow.setAlignment(Pos.CENTER_LEFT);
+        Button uploadImg = new Button("Upload image…");
+        uploadImg.getStyleClass().add("btn-outline");
+        uploadImg.setOnAction(e -> uploadInstanceImage(inst));
+        Button clearImg = new Button("Use a block instead");
+        clearImg.getStyleClass().add("btn-outline");
+        clearImg.setOnAction(e -> {
+            try {
+                Files.deleteIfExists(instanceManager.instanceDir(inst).resolve("icon.png"));
+                showInstanceDetail(currentInstance(inst));
+            } catch (Exception ex) { alert(Alert.AlertType.ERROR, "Failed", ex.getMessage()); }
+        });
+        HBox imgRow = new HBox(10, uploadImg, clearImg);
+        imgRow.setAlignment(Pos.CENTER_LEFT);
 
-        VBox settingsContent = new VBox(12, profLbl, swatches,
+        VBox settingsContent = new VBox(12, profLbl, swatches, imgRow,
                 settingRow("Name", nameF),
                 settingRow("RAM", ramBox),
                 settingRow("Resolution", resBox),
@@ -977,7 +1107,6 @@ public class MainApp extends Application {
                 settingRow("Extra JVM args", jvmF),
                 settingRow("Group", groupF),
                 saveSettings,
-                new Region(), manageRow,
                 new Region(), optifine, optHelp,
                 new Region(), del);
         settingsContent.setPadding(new Insets(12));
@@ -998,8 +1127,24 @@ public class MainApp extends Application {
                 tab("Settings", settingsScroll));
         VBox.setVgrow(tabs, Priority.ALWAYS);
 
-        page.getChildren().addAll(header, tabs);
+        page.getChildren().addAll(header, actionRow, tabs);
         content.getChildren().setAll(page);
+    }
+
+    private void uploadInstanceImage(Instance inst) {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Choose instance image");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg", "*.gif"));
+        java.io.File f = fc.showOpenDialog(stage);
+        if (f == null) return;
+        try {
+            Path dest = instanceManager.instanceDir(inst).resolve("icon.png");
+            Files.createDirectories(dest.getParent());
+            Files.copy(f.toPath(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            showInstanceDetail(currentInstance(inst));
+        } catch (Exception ex) {
+            alert(Alert.AlertType.ERROR, "Couldn't set image", String.valueOf(ex.getMessage()));
+        }
     }
 
     private static int snapRam(double v) {
@@ -1207,12 +1352,21 @@ public class MainApp extends Application {
                 Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric, forge, quickWorld, quickServer);
                 Platform.runLater(() -> play.getStyleClass().remove("loading"));
 
+                // Register as a running game (Playing Now tab + per-card indicator).
+                long id = runId.incrementAndGet();
+                running.put(id, new RunningGame(inst, proc, player, System.currentTimeMillis()));
+                Platform.runLater(this::onRunningChanged);
+                if (config != null && config.minimizeOnPlay())
+                    Platform.runLater(() -> { if (stage != null) stage.setIconified(true); });
+
                 // Mark last-played and refresh the view.
                 instanceManager.update(inst.withLastPlayed(System.currentTimeMillis()));
                 Platform.runLater(this::showInstances);
 
                 // Surface an early crash with the log tail; silent on normal exit.
                 int code = proc.waitFor();
+                running.remove(id);
+                Platform.runLater(this::onRunningChanged);
                 if (stats != null) {
                     stats.addSession(System.currentTimeMillis() - sessionStart);
                     Platform.runLater(this::updateStatsBar);
@@ -1292,6 +1446,10 @@ public class MainApp extends Application {
         ChoiceBox<Loader> loader = new ChoiceBox<>();
         loader.getItems().addAll(Loader.VANILLA, Loader.FABRIC, Loader.NEOFORGE, Loader.FORGE);
         loader.getSelectionModel().selectFirst();
+        if (config != null) {
+            try { loader.getSelectionModel().select(Loader.valueOf(config.defaultLoader())); }
+            catch (Exception ignore) {}
+        }
 
         TextField group = new TextField();
         group.setPromptText("Group (optional) — e.g. Performance, Multiplayer");
@@ -1309,7 +1467,9 @@ public class MainApp extends Application {
         if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
             try {
                 String nm = name.getText().isBlank() ? (loader.getValue().display() + " " + ver.getValue()) : name.getText();
-                instanceManager.create(nm, ver.getValue(), loader.getValue(), group.getText().trim());
+                Instance created = instanceManager.create(nm, ver.getValue(), loader.getValue(), group.getText().trim());
+                if (config != null && config.defaultRamMb() != 4096)
+                    instanceManager.update(created.withRam(config.defaultRamMb()));
                 showInstances();
             } catch (Exception ex) {
                 alert(Alert.AlertType.ERROR, "Create failed", ex.getMessage());
@@ -1568,7 +1728,7 @@ public class MainApp extends Application {
             Button openF = new Button("Open Folder");
             openF.getStyleClass().add("btn-outline");
             openF.setOnAction(e -> openFolder(w));
-            Button backup = new Button("Backup");
+            Button backup = new Button("Create Backup");
             backup.getStyleClass().add("btn-outline");
             backup.setOnAction(e -> backupWorld(inst, w));
             Button del = new Button("Delete");
@@ -1706,14 +1866,35 @@ public class MainApp extends Application {
                         }
                     }
                 }
+                // Keep only the newest 3 backups per world (delete the oldest beyond that).
+                int kept = pruneBackups(backups, wn, 3);
                 Platform.runLater(() -> alert(Alert.AlertType.INFORMATION, "World backed up",
-                        wn + " → backups/" + zip.getFileName()));
+                        wn + " → backups/" + zip.getFileName() + "\nKeeping the newest " + kept + " backup(s) of this world."));
             } catch (Exception ex) {
                 Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Backup failed", String.valueOf(ex.getMessage())));
             }
         }, "world-backup");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** Keep the newest {@code max} backups named {@code <world>_*.zip}; delete older ones. Returns kept count. */
+    private static int pruneBackups(Path backups, String worldName, int max) {
+        try (var s = Files.list(backups)) {
+            List<Path> mine = new ArrayList<>();
+            s.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().startsWith(worldName + "_")
+                            && p.getFileName().toString().endsWith(".zip"))
+                    .sorted() // timestamp suffix sorts chronologically
+                    .forEach(mine::add);
+            while (mine.size() > max) {
+                Path oldest = mine.remove(0);
+                Files.deleteIfExists(oldest);
+            }
+            return mine.size();
+        } catch (Exception e) {
+            return max;
+        }
     }
 
     private void restoreBackup(Instance inst, VBox list) {
@@ -1965,7 +2146,7 @@ public class MainApp extends Application {
         sourceBox.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> page2.accept(true));
 
         Button perfBtn = new Button("⚡ Performance Pack");
-        perfBtn.getStyleClass().add("btn-outline");
+        perfBtn.getStyleClass().add("btn-update"); // gold/yellow — stands out as the recommended action
         perfBtn.setOnAction(e -> installPerfPack(instPick.getValue(), perfBtn));
 
         Button importPack = new Button("📦 Import .mrpack file");
@@ -2134,10 +2315,22 @@ public class MainApp extends Application {
         t.start();
     }
 
-    private static final String[] PERF_MODS =
+    // Sodium-family for Fabric/Quilt; Embeddium (the Sodium port) + Forge-compatible mods otherwise.
+    private static final String[] PERF_MODS_FABRIC =
             {"sodium", "lithium", "ferrite-core", "modernfix", "entityculling", "immediatelyfast", "dynamic-fps"};
+    private static final String[] PERF_MODS_FORGE =
+            {"embeddium", "ferrite-core", "modernfix", "entityculling", "immediatelyfast", "dynamic-fps"};
 
     private void installPerfPack(Instance inst, Button btn) {
+        if (inst == null) return;
+        if (inst.loader() == Loader.VANILLA) {
+            alert(Alert.AlertType.INFORMATION, "Needs a mod loader",
+                    "The Performance Pack installs mods — make this a Fabric, NeoForge, or Forge instance first.");
+            return;
+        }
+        boolean forgey = inst.loader() == Loader.FORGE || inst.loader() == Loader.NEOFORGE;
+        String[] mods = forgey ? PERF_MODS_FORGE : PERF_MODS_FABRIC;
+        String loaderTag = modLoaderTag(inst, "mod"); // fabric/quilt/forge/neoforge from the instance
         btn.setDisable(true);
         btn.setText("Installing…");
         Thread t = new Thread(() -> {
@@ -2145,11 +2338,11 @@ public class MainApp extends Application {
             List<String> failed = new ArrayList<>();
             Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
             ModrinthClient client = new ModrinthClient();
-            for (String slug : PERF_MODS) {
+            for (String slug : mods) {
                 try {
-                    ok += ModInstaller.install(client, slug, inst.version(), "fabric", modsDir, m -> {});
+                    ok += ModInstaller.install(client, slug, inst.version(), loaderTag, modsDir, m -> {});
                     try {
-                        var vers = client.versions(slug, inst.version(), "fabric");
+                        var vers = client.versions(slug, inst.version(), loaderTag);
                         ModrinthClient.ModFile pf = primaryFile(vers.isEmpty() ? null : vers.get(0));
                         if (pf != null) new ModTracker(instanceManager.instanceDir(inst)).record(
                                 new ModTracker.Entry(slug, "modrinth", "mod", "mods", pf.filename(), slug));
@@ -2164,7 +2357,7 @@ public class MainApp extends Application {
                 btn.setDisable(false);
                 btn.setText("⚡ Performance Pack");
                 alert(Alert.AlertType.INFORMATION, "Performance Pack",
-                        "Added " + total + " file(s) to " + inst.name() + "."
+                        "Added " + total + " file(s) to " + inst.name() + " (" + inst.loader().display() + ")."
                         + (failed.isEmpty() ? "" : "\nSkipped (no compatible version): " + String.join(", ", failed)));
             });
         }, "perf-pack");
@@ -2312,20 +2505,55 @@ public class MainApp extends Application {
                     "OptiFine on Fabric uses OptiFabric — make this a Fabric instance first.");
             return;
         }
-        try {
-            Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
-            Files.createDirectories(modsDir);
-            openFolder(modsDir);
-            alert(Alert.AlertType.INFORMATION, "OptiFine setup",
-                    "OptiFine needs TWO jars in this mods folder (just opened):\n\n"
-                    + "1) OptiFabric — for " + inst.version() + ", from CurseForge (search \"OptiFabric\").\n"
-                    + "2) OptiFine — for " + inst.version() + ", from optifine.net.\n\n"
-                    + "Drop both .jars here, then Play.\n\n"
-                    + "Heads up: brand-new versions (e.g. 1.21.11) usually aren't supported yet — use 1.21.1 or "
-                    + "1.20.1 for OptiFine. OptiFine conflicts with Sodium, so disable Sodium in this instance.");
-        } catch (Exception ex) {
-            alert(Alert.AlertType.ERROR, "OptiFine setup failed", String.valueOf(ex.getMessage()));
-        }
+        Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
+        try { Files.createDirectories(modsDir); } catch (Exception ignore) {}
+        // Auto-install OptiFabric from Modrinth if available (then only the OptiFine jar is manual).
+        Thread t = new Thread(() -> {
+            String status;
+            try {
+                int n = ModInstaller.install(new ModrinthClient(), "optifabric", inst.version(), "fabric", modsDir, m -> {});
+                status = n > 0 ? "✓ OptiFabric installed automatically."
+                        : "OptiFabric: no compatible build auto-installed — grab it from the link below.";
+            } catch (Exception ex) {
+                status = "OptiFabric couldn't auto-install — grab it from the link below.";
+            }
+            String s = status;
+            Platform.runLater(() -> optifineDialog(inst, modsDir, s));
+        }, "optifabric");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void optifineDialog(Instance inst, Path modsDir, String ofabricStatus) {
+        Dialog<ButtonType> d = new Dialog<>();
+        d.setTitle("Set up OptiFine");
+        d.setHeaderText("OptiFine for " + inst.version() + " (Fabric)");
+        Label step = new Label(ofabricStatus + "\n\nThe OptiFine jar itself is gated behind optifine.net "
+                + "and can't be auto-downloaded — download it, drop it in the mods folder, then Play.");
+        step.setWrapText(true);
+        Hyperlink ofLink = new Hyperlink("⬇  Download OptiFine — optifine.net/downloads");
+        ofLink.setOnAction(e -> openUrl("https://optifine.net/downloads"));
+        Hyperlink ofabLink = new Hyperlink("⬇  OptiFabric (if it didn't auto-install) — CurseForge");
+        ofabLink.setOnAction(e -> openUrl("https://www.curseforge.com/minecraft/mc-mods/optifabric/files"));
+        Button openMods = new Button("Open mods folder");
+        openMods.getStyleClass().add("btn-outline");
+        openMods.setOnAction(e -> openFolder(modsDir));
+        Label warn = new Label("Note: brand-new MC versions often aren't supported yet (use 1.21.1 or 1.20.1). "
+                + "OptiFine conflicts with Sodium — disable Sodium in this instance.");
+        warn.getStyleClass().add("muted");
+        warn.setWrapText(true);
+        VBox box = new VBox(10, step, ofLink, ofabLink, openMods, warn);
+        box.setPadding(new Insets(12));
+        box.setPrefWidth(470);
+        d.getDialogPane().setContent(box);
+        d.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        styleDialog(d);
+        d.showAndWait();
+    }
+
+    private void openUrl(String url) {
+        try { java.awt.Desktop.getDesktop().browse(java.net.URI.create(url)); }
+        catch (Exception ex) { alert(Alert.AlertType.ERROR, "Can't open link", url); }
     }
 
     private static ModrinthClient.ModFile primaryFile(ModrinthClient.ModVersion v) {
@@ -2654,14 +2882,63 @@ public class MainApp extends Application {
             if (config != null) config.setBgOpacity(b.doubleValue());
         });
 
-        VBox themeSection = new VBox(8, themeLbl, themeRow, bgScaleLbl, bgScaleSlider, bgOpLbl, bgOpSlider);
+        CheckBox animChk = new CheckBox("UI animations (fade between views)");
+        animChk.setSelected(config == null || config.animations());
+        animChk.setOnAction(e -> { if (config != null) config.setAnimations(animChk.isSelected()); });
+
+        VBox themeSection = new VBox(8, themeLbl, themeRow, bgScaleLbl, bgScaleSlider, bgOpLbl, bgOpSlider, animChk);
         themeSection.setStyle("-fx-padding: 12 0 0 0;");
+
+        // ---- Global defaults ----
+        Label gdLbl = new Label("Global defaults");
+        gdLbl.getStyleClass().add("card-title-sm");
+
+        Slider defRam = new Slider(1024, 16384, config != null ? config.defaultRamMb() : 4096);
+        defRam.setPrefWidth(360);
+        defRam.getStyleClass().add("ram-slider");
+        defRam.setSnapToTicks(true);
+        defRam.setMajorTickUnit(2048);
+        defRam.setMinorTickCount(3);
+        defRam.setBlockIncrement(512);
+        defRam.setShowTickMarks(true);
+        Label defRamVal = new Label((config != null ? config.defaultRamMb() : 4096) + " MB");
+        defRamVal.getStyleClass().add("ram-value");
+        defRamVal.setMinWidth(80);
+        defRam.valueProperty().addListener((o, a, b) -> {
+            int mb = snapRam(b.doubleValue());
+            defRamVal.setText(mb + " MB");
+            if (config != null) config.setDefaultRamMb(mb);
+        });
+
+        ChoiceBox<Loader> defLoader = new ChoiceBox<>();
+        defLoader.getItems().addAll(Loader.VANILLA, Loader.FABRIC, Loader.NEOFORGE, Loader.FORGE);
+        try { defLoader.getSelectionModel().select(Loader.valueOf(config != null ? config.defaultLoader() : "FABRIC")); }
+        catch (Exception ex) { defLoader.getSelectionModel().select(Loader.FABRIC); }
+        defLoader.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
+            if (config != null && b != null) config.setDefaultLoader(b.name());
+        });
+
+        CheckBox minChk = new CheckBox("Minimize launcher when a game launches");
+        minChk.setSelected(config != null && config.minimizeOnPlay());
+        minChk.setOnAction(e -> { if (config != null) config.setMinimizeOnPlay(minChk.isSelected()); });
+        CheckBox confChk = new CheckBox("Confirm before deleting an instance");
+        confChk.setSelected(config == null || config.confirmDelete());
+        confChk.setOnAction(e -> { if (config != null) config.setConfirmDelete(confChk.isSelected()); });
+
+        VBox gdSection = new VBox(8, gdLbl,
+                settingRow("Default RAM", new HBox(10, defRam, defRamVal)),
+                settingRow("Default loader", defLoader),
+                minChk, confChk);
+        gdSection.setStyle("-fx-padding: 12 0 0 0;");
 
         Label tip = new Label("Tip: press Ctrl+K anywhere to open the command palette.");
         tip.getStyleClass().add("muted");
 
-        page.getChildren().addAll(t, tip, nameBox, themeSection, cid, dir, cfBox, bgBox);
-        content.getChildren().setAll(page);
+        page.getChildren().addAll(t, tip, nameBox, themeSection, gdSection, cid, dir, cfBox, bgBox);
+        ScrollPane settingsScroll = new ScrollPane(page);
+        settingsScroll.setFitToWidth(true);
+        settingsScroll.getStyleClass().add("scroll-pane");
+        content.getChildren().setAll(settingsScroll);
     }
 
     private void chooseBackground() {
