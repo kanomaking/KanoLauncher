@@ -205,13 +205,21 @@ public class MainApp extends Application {
         stage.setMinHeight(Math.min(600, vb.getHeight() - 40));
         stage.setWidth(winW);
         stage.setHeight(winH);
-        // Top-left anchor with a 40px margin — guarantees the whole window (and its title bar) is on-screen.
-        stage.setX(vb.getMinX() + 40);
-        stage.setY(vb.getMinY() + 40);
+        // Center within the work area (size is clamped to fit, so this stays on-screen on any display).
+        stage.setX(vb.getMinX() + (vb.getWidth() - winW) / 2);
+        stage.setY(vb.getMinY() + (vb.getHeight() - winH) / 2);
         stage.show();
         logWindowGeometry("after-show");
-        // After show, undecorated stages can be nudged off-screen by the platform — clamp back in.
+        // Force the window to the FRONT. Launched from a terminal, Windows' focus-stealing prevention
+        // opens it BEHIND the terminal — so its title bar looks "hidden". A brief always-on-top nudge
+        // pops it above everything, then we release it so other windows can cover it normally again.
+        stage.toFront();
+        stage.requestFocus();
+        stage.setAlwaysOnTop(true); // topmost briefly so it rises above the launching terminal/IDE
         Platform.runLater(this::clampOnScreen);
+        PauseTransition raise = new PauseTransition(Duration.millis(700));
+        raise.setOnFinished(ev -> { stage.setAlwaysOnTop(false); stage.toFront(); });
+        raise.play();
 
         scene.getAccelerators().put(
                 new KeyCodeCombination(KeyCode.R, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
