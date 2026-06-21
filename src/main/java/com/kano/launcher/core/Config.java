@@ -16,6 +16,9 @@ public final class Config {
     private String activeUuid = "";
     private String launcherName = "KanoLauncher";
     private String themeKey = "crimson";
+    private String themeAccent = "#D32F2F";
+    private double bgScale = 540;
+    private double bgOpacity = 0.30;
 
     public Config(Path dataDir) {
         this.file = dataDir.resolve("config.json");
@@ -59,6 +62,23 @@ public final class Config {
         save();
     }
 
+    public String themeAccent() {
+        return themeAccent == null || themeAccent.isBlank() ? "#D32F2F" : themeAccent;
+    }
+
+    public void setThemeAccent(String hex) {
+        this.themeAccent = hex == null || hex.isBlank() ? "#D32F2F" : hex.trim();
+        save();
+    }
+
+    public double bgScale() { return bgScale <= 0 ? 540 : bgScale; }
+
+    public void setBgScale(double v) { this.bgScale = v; save(); }
+
+    public double bgOpacity() { return bgOpacity < 0 ? 0.30 : bgOpacity; }
+
+    public void setBgOpacity(double v) { this.bgOpacity = v; save(); }
+
     private void load() {
         try {
             if (Files.exists(file)) {
@@ -67,6 +87,9 @@ public final class Config {
                 if (o != null && o.has("activeUuid")) activeUuid = o.get("activeUuid").getAsString();
                 if (o != null && o.has("launcherName")) launcherName = o.get("launcherName").getAsString();
                 if (o != null && o.has("themeKey")) themeKey = o.get("themeKey").getAsString();
+                if (o != null && o.has("themeAccent")) themeAccent = o.get("themeAccent").getAsString();
+                if (o != null && o.has("bgScale")) bgScale = o.get("bgScale").getAsDouble();
+                if (o != null && o.has("bgOpacity")) bgOpacity = o.get("bgOpacity").getAsDouble();
             }
         } catch (Exception ignored) {
         }
@@ -79,6 +102,9 @@ public final class Config {
             o.addProperty("activeUuid", activeUuid);
             o.addProperty("launcherName", launcherName);
             o.addProperty("themeKey", themeKey);
+            o.addProperty("themeAccent", themeAccent);
+            o.addProperty("bgScale", bgScale);
+            o.addProperty("bgOpacity", bgOpacity);
             Path tmp = file.resolveSibling("config.json.tmp");
             Files.writeString(tmp, new Gson().toJson(o), StandardCharsets.UTF_8);
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);

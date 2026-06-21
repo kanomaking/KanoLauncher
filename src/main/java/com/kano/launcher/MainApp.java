@@ -30,6 +30,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ChoiceBox;
+import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.DialogPane;
@@ -62,7 +63,9 @@ import javafx.embed.swing.SwingFXUtils;
 import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.stage.Screen;
 import javafx.stage.StageStyle;
+import javafx.geometry.Rectangle2D;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
 
@@ -106,6 +109,10 @@ public class MainApp extends Application {
     private String initError;
     private Stage stage;
     private double dragX, dragY;
+    private StackPane appShell;
+    private StackPane appPanel;
+    private boolean maximized;
+    private double restoreX, restoreY, restoreW, restoreH;
     private Label accountChip;
     private HBox avatarBar;
     private Label titleText;
@@ -138,25 +145,15 @@ public class MainApp extends Application {
         inner.setCenter(new StackPane(content, buildPalette()));
         inner.setBottom(buildStatsBar());
 
-        StackPane panel = new StackPane();
-        panel.getStyleClass().add("app-panel");
-        Node bg = buildBackground(panel);
-        if (bg != null) panel.getChildren().add(bg);
-        panel.getChildren().add(inner);
+        appPanel = new StackPane();
+        appPanel.getStyleClass().add("app-panel");
+        Node bg = buildBackground(appPanel);
+        if (bg != null) appPanel.getChildren().add(bg);
+        appPanel.getChildren().add(inner);
 
-        StackPane shell = new StackPane(panel, buildResizeGrip());
-        shell.getStyleClass().add("app-shell");
-
-        // Maximize: drop the glow padding + rounding so the window truly fills the screen (no edge gap).
-        stage.maximizedProperty().addListener((o, was, now) -> {
-            if (now) {
-                shell.setStyle("-fx-padding: 0;");
-                if (!panel.getStyleClass().contains("app-panel-flat")) panel.getStyleClass().add("app-panel-flat");
-            } else {
-                shell.setStyle("");
-                panel.getStyleClass().remove("app-panel-flat");
-            }
-        });
+        appShell = new StackPane(appPanel, buildResizeGrip());
+        appShell.getStyleClass().add("app-shell");
+        StackPane shell = appShell;
 
         showInstances();
 
@@ -183,6 +180,43 @@ public class MainApp extends Application {
         checkForUpdate();
     }
 
+    private void toggleMaximize() {
+        if (stage == null) return;
+        if (!maximized) {
+            restoreX = stage.getX();
+            restoreY = stage.getY();
+            restoreW = stage.getWidth();
+            restoreH = stage.getHeight();
+            Screen scr = Screen.getScreensForRectangle(stage.getX(), stage.getY(), 1, 1)
+                    .stream().findFirst().orElse(Screen.getPrimary());
+            Rectangle2D b = scr.getVisualBounds(); // work area — excludes the taskbar
+            stage.setX(b.getMinX());
+            stage.setY(b.getMinY());
+            stage.setWidth(b.getWidth());
+            stage.setHeight(b.getHeight());
+            maximized = true;
+            shellFlat(true);
+        } else {
+            stage.setX(restoreX);
+            stage.setY(restoreY);
+            stage.setWidth(restoreW);
+            stage.setHeight(restoreH);
+            maximized = false;
+            shellFlat(false);
+        }
+    }
+
+    private void shellFlat(boolean flat) {
+        if (appShell == null || appPanel == null) return;
+        if (flat) {
+            appShell.setStyle("-fx-padding: 0;");
+            if (!appPanel.getStyleClass().contains("app-panel-flat")) appPanel.getStyleClass().add("app-panel-flat");
+        } else {
+            appShell.setStyle("");
+            appPanel.getStyleClass().remove("app-panel-flat");
+        }
+    }
+
     private String launcherName() {
         return config != null ? config.launcherName() : "KanoLauncher";
     }
@@ -200,12 +234,50 @@ public class MainApp extends Application {
         THEMES.put("gold", new Theme("Gold", "#C9A227", "#E0B83A", "#9A7B16"));
     }
 
+    private String resolveAccent() {
+        String key = config != null ? config.themeKey() : "crimson";
+        if (THEMES.containsKey(key)) return THEMES.get(key).accent();
+        return config != null ? config.themeAccent() : "#D32F2F";
+    }
+
+    /** Compute the whole accent palette (solid + glow + border + dark tints) from one accent hex. */
     private void applyTheme() {
         if (stage == null || stage.getScene() == null) return;
-        Theme t = THEMES.getOrDefault(config != null ? config.themeKey() : "crimson", THEMES.get("crimson"));
+        int[] c = hexRgb(resolveAccent());
+        String accent = hex(c[0], c[1], c[2]);
+        String bright = hex(c[0] + 30, c[1] + 30, c[2] + 30);
+        String dark = hex((int) (c[0] * 0.72), (int) (c[1] * 0.72), (int) (c[2] * 0.72));
+        String glow = "rgba(" + c[0] + "," + c[1] + "," + c[2] + ",0.55)";
+        String border = "rgba(" + c[0] + "," + c[1] + "," + c[2] + ",0.6)";
+        String tint = hex((int) (c[0] * 0.11) + 8, (int) (c[1] * 0.11) + 4, (int) (c[2] * 0.11) + 4);
+        String tintStrong = hex((int) (c[0] * 0.14) + 10, (int) (c[1] * 0.14) + 5, (int) (c[2] * 0.14) + 5);
+        String tintDeep = hex((int) (c[0] * 0.07) + 6, (int) (c[1] * 0.07) + 3, (int) (c[2] * 0.07) + 3);
         stage.getScene().getRoot().setStyle(
-                "-kano-accent: " + t.accent() + "; -kano-accent-bright: " + t.bright()
-                + "; -kano-accent-dark: " + t.dark() + ";");
+                "-kano-accent: " + accent + "; -kano-accent-bright: " + bright + "; -kano-accent-dark: " + dark
+                + "; -kano-glow: " + glow + "; -kano-border: " + border
+                + "; -kano-tint: " + tint + "; -kano-tint-strong: " + tintStrong
+                + "; -kano-tint-deep: " + tintDeep + ";");
+    }
+
+    private static int clamp(int v) { return Math.max(0, Math.min(255, v)); }
+
+    private static String hex(int r, int g, int b) {
+        return String.format("#%02X%02X%02X", clamp(r), clamp(g), clamp(b));
+    }
+
+    private static String toHex(javafx.scene.paint.Color c) {
+        return String.format("#%02X%02X%02X",
+                (int) Math.round(c.getRed() * 255), (int) Math.round(c.getGreen() * 255),
+                (int) Math.round(c.getBlue() * 255));
+    }
+
+    private static int[] hexRgb(String hex) {
+        String h = hex == null ? "D32F2F" : (hex.startsWith("#") ? hex.substring(1) : hex);
+        if (h.length() < 6) h = "D32F2F";
+        return new int[]{
+                Integer.parseInt(h.substring(0, 2), 16),
+                Integer.parseInt(h.substring(2, 4), 16),
+                Integer.parseInt(h.substring(4, 6), 16)};
     }
 
     // ---- self-update notification (notify only; see UpdateChecker for the bootstrapper design) ----
@@ -299,7 +371,7 @@ public class MainApp extends Application {
         Button min = winButton("—", false);
         min.setOnAction(e -> stage.setIconified(true));
         Button max = winButton("❐", false);
-        max.setOnAction(e -> stage.setMaximized(!stage.isMaximized()));
+        max.setOnAction(e -> toggleMaximize());
         Button close = winButton("✕", true);
         close.setOnAction(e -> Platform.exit());
 
@@ -502,12 +574,10 @@ public class MainApp extends Application {
             empty.getStyleClass().add("muted");
             body.getChildren().add(empty);
         } else {
-            body.getChildren().add(featuredCard(all.get(0)));
-            if (all.size() > 1) {
-                FlowPane grid = new FlowPane(16, 16);
-                for (int i = 1; i < all.size(); i++) grid.getChildren().add(smallCard(all.get(i)));
-                body.getChildren().add(grid);
-            }
+            // Uniform grid — every instance renders the same way (no special first/featured card).
+            FlowPane grid = new FlowPane(16, 16);
+            for (Instance inst : all) grid.getChildren().add(smallCard(inst));
+            body.getChildren().add(grid);
         }
 
         ScrollPane scroll = new ScrollPane(body);
@@ -1814,7 +1884,34 @@ public class MainApp extends Application {
                 }
             }
         });
-        VBox themeSection = new VBox(8, themeLbl, themeBox);
+        ColorPicker colorPicker = new ColorPicker(Color.web(resolveAccent()));
+        colorPicker.valueProperty().addListener((o, a, b) -> {
+            if (config != null) { config.setThemeKey("custom"); config.setThemeAccent(toHex(b)); }
+            applyTheme();
+        });
+        Label customLbl = new Label("Custom:");
+        customLbl.getStyleClass().add("muted");
+        HBox themeRow = new HBox(10, themeBox, customLbl, colorPicker);
+        themeRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label bgScaleLbl = new Label("Background size");
+        bgScaleLbl.getStyleClass().add("card-sub");
+        Slider bgScaleSlider = new Slider(120, 1200, config != null ? config.bgScale() : 540);
+        bgScaleSlider.setPrefWidth(300);
+        bgScaleSlider.valueProperty().addListener((o, a, b) -> {
+            if (bgView != null) bgView.setFitHeight(b.doubleValue());
+            if (config != null) config.setBgScale(b.doubleValue());
+        });
+        Label bgOpLbl = new Label("Background visibility");
+        bgOpLbl.getStyleClass().add("card-sub");
+        Slider bgOpSlider = new Slider(0, 1.0, config != null ? config.bgOpacity() : 0.30);
+        bgOpSlider.setPrefWidth(300);
+        bgOpSlider.valueProperty().addListener((o, a, b) -> {
+            if (bgView != null) bgView.setOpacity(b.doubleValue());
+            if (config != null) config.setBgOpacity(b.doubleValue());
+        });
+
+        VBox themeSection = new VBox(8, themeLbl, themeRow, bgScaleLbl, bgScaleSlider, bgOpLbl, bgOpSlider);
         themeSection.setStyle("-fx-padding: 12 0 0 0;");
 
         Label tip = new Label("Tip: press Ctrl+K anywhere to open the command palette.");
@@ -2140,8 +2237,8 @@ public class MainApp extends Application {
     private Node buildBackground(Region panel) {
         bgView = new ImageView();
         bgView.setPreserveRatio(true);
-        bgView.setFitHeight(540);
-        bgView.setOpacity(0.30);
+        bgView.setFitHeight(config != null ? config.bgScale() : 540);
+        bgView.setOpacity(config != null ? config.bgOpacity() : 0.30);
         bgView.setMouseTransparent(true);
         Image img = loadBackgroundImage();
         if (img != null) bgView.setImage(img);
