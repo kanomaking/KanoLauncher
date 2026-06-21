@@ -5,6 +5,7 @@ import com.kano.launcher.core.AccountManager;
 import com.kano.launcher.core.Instance;
 import com.kano.launcher.core.InstanceManager;
 import com.kano.launcher.core.Loader;
+import com.kano.launcher.core.VersionManifest;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -14,6 +15,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
@@ -39,7 +41,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * KanoLauncher main window — Phase 1, neon-glow theme.
@@ -52,6 +57,8 @@ public class MainApp extends Application {
 
     private final StackPane content = new StackPane();
     private final List<HBox> navItems = new ArrayList<>();
+    private final Map<String, HBox> navByName = new HashMap<>();
+    private volatile VersionManifest versionManifest;
     private AccountManager accountManager;
     private InstanceManager instanceManager;
     private String clientId;
@@ -98,6 +105,13 @@ public class MainApp extends Application {
             initError = "Init failed: " + e.getMessage();
         }
         clientId = resolveClientId();
+
+        // Fetch the full Mojang version list in the background so the Create dialog shows every version.
+        Thread t = new Thread(() -> {
+            try { versionManifest = VersionManifest.fetch(); } catch (Exception ignored) { }
+        }, "version-manifest");
+        t.setDaemon(true);
+        t.start();
     }
 
     // ---- title bar ----
@@ -163,6 +177,7 @@ public class MainApp extends Application {
 
         side.getChildren().add(brand);
         side.getChildren().addAll(
+                nav("⌂", "Home", this::showHome),
                 nav("▤", "Library", this::showLibrary),
                 nav("◰", "Instances", this::showInstances),
                 nav("❖", "Browse Modpacks", this::showBrowse),
@@ -180,18 +195,60 @@ public class MainApp extends Application {
         item.getStyleClass().add("nav-item");
         item.setOnMouseClicked(e -> { selectNav(item); action.run(); });
         navItems.add(item);
+        navByName.put(text, item);
         return item;
     }
 
     private void selectNav(HBox active) {
         for (HBox n : navItems) n.getStyleClass().remove("nav-item-active");
-        if (!active.getStyleClass().contains("nav-item-active")) active.getStyleClass().add("nav-item-active");
+        if (active != null && !active.getStyleClass().contains("nav-item-active")) {
+            active.getStyleClass().add("nav-item-active");
+        }
+    }
+
+    // ---- Home dashboard ----
+
+    private void showHome() {
+        selectNav(navByName.get("Home"));
+        VBox page = new VBox(18);
+        page.getStyleClass().add("content");
+        Label title = new Label("Home");
+        title.getStyleClass().add("page-title");
+        Label sub = new Label("Jump to anything:");
+        sub.getStyleClass().add("muted");
+
+        FlowPane grid = new FlowPane(16, 16);
+        grid.getChildren().addAll(
+                homeCard("◰", "Instances", "Create and launch your games", this::showInstances),
+                homeCard("▤", "Library", "Your installed content", this::showLibrary),
+                homeCard("❖", "Browse Modpacks", "Find mods on Modrinth", this::showBrowse),
+                homeCard("☺", "Skins", "Change your skin", this::showSkins),
+                homeCard("●", "Accounts", "Manage Microsoft accounts", this::showAccounts),
+                homeCard("⚙", "Settings", "Launcher options", this::showSettings));
+
+        page.getChildren().addAll(title, sub, grid);
+        content.getChildren().setAll(page);
+    }
+
+    private Region homeCard(String icon, String title, String desc, Runnable action) {
+        Label ic = new Label(icon);
+        ic.getStyleClass().add("icon-glyph");
+        Label t = new Label(title);
+        t.getStyleClass().add("card-title-sm");
+        Label d = new Label(desc);
+        d.getStyleClass().add("card-sub");
+        VBox box = new VBox(6, ic, t, d);
+        box.getStyleClass().add("card");
+        box.setPrefWidth(250);
+        box.setOnMouseClicked(e -> action.run());
+        box.setStyle("-fx-cursor: hand;");
+        return box;
     }
 
     // ---- Instances view ----
 
     private void showInstances() {
-        if (navItems.size() > 1) selectNav(navItems.get(1));
+        selectNav(navByName.get("Instances"));
         VBox page = new VBox(18);
         page.getStyleClass().add("content");
 
@@ -341,16 +398,31 @@ public class MainApp extends Application {
 
         TextField name = new TextField();
         name.setPromptText("Name");
+
+        CheckBox snapshots = new CheckBox("Show snapshots & old versions");
         ChoiceBox<String> ver = new ChoiceBox<>();
-        ver.getItems().addAll(VERSIONS);
-        ver.getSelectionModel().selectFirst();
+        Label verCount = new Label();
+        verCount.getStyleClass().add("card-sub");
+        Runnable fillVersions = () -> {
+            List<String> ids = versionManifest != null
+                    ? versionManifest.ids(snapshots.isSelected())
+                    : Arrays.asList(VERSIONS);
+            ver.getItems().setAll(ids);
+            if (!ver.getItems().isEmpty()) ver.getSelectionModel().selectFirst();
+            verCount.setText(versionManifest != null
+                    ? ids.size() + " versions available"
+                    : "Offline — showing a short fallback list");
+        };
+        snapshots.setOnAction(e -> fillVersions.run());
+        fillVersions.run();
+
         ChoiceBox<Loader> loader = new ChoiceBox<>();
         loader.getItems().addAll(Loader.VANILLA, Loader.FABRIC);
         loader.getSelectionModel().selectFirst();
 
         VBox box = new VBox(10,
                 new Label("Name"), name,
-                new Label("Version"), ver,
+                new Label("Version"), ver, snapshots, verCount,
                 new Label("Loader"), loader);
         box.setPadding(new Insets(12));
         d.getDialogPane().setContent(box);
@@ -396,11 +468,12 @@ public class MainApp extends Application {
 
     // ---- other views ----
 
-    private void showLibrary() { simplePage("Library", "Your installed content will live here."); }
-    private void showBrowse() { simplePage("Browse Modpacks", "Modrinth browsing comes with the content integration."); }
-    private void showSkins() { simplePage("Skins", "Skin changer is a later milestone (needs app approval)."); }
+    private void showLibrary() { selectNav(navByName.get("Library")); simplePage("Library", "Your installed content will live here."); }
+    private void showBrowse() { selectNav(navByName.get("Browse Modpacks")); simplePage("Browse Modpacks", "Modrinth browsing comes with the content integration."); }
+    private void showSkins() { selectNav(navByName.get("Skins")); simplePage("Skins", "Skin changer is a later milestone (needs app approval)."); }
 
     private void showSettings() {
+        selectNav(navByName.get("Settings"));
         VBox page = new VBox(12);
         page.getStyleClass().add("content");
         Label t = new Label("Settings");
