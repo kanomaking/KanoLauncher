@@ -74,6 +74,7 @@ public final class VersionDetail {
         }
 
         String osTag = osTag();
+        String wantNative = nativeClassifier(); // exact, arch-correct (e.g. "natives-windows", not -windows-x86)
         List<Dl> libraries = new ArrayList<>();
         List<Dl> natives = new ArrayList<>();
         for (var el : root.getAsJsonArray("libraries")) {
@@ -87,8 +88,10 @@ public final class VersionDetail {
                 String path = a.has("path") ? a.get("path").getAsString() : "";
                 Dl dl = new Dl(a.get("url").getAsString(), a.get("sha1").getAsString(),
                         a.get("size").getAsLong(), path);
-                if (path.contains("natives-")) {
-                    if (path.contains("natives-" + osTag)) natives.add(dl);
+                if (path.contains("-natives-")) {
+                    // Only the exact classifier for this OS+arch — endsWith avoids matching
+                    // "-natives-windows-arm64.jar" / "-natives-windows-x86.jar" for an x64 host.
+                    if (path.endsWith(wantNative + ".jar")) natives.add(dl);
                 } else {
                     libraries.add(dl);
                 }
@@ -133,6 +136,20 @@ public final class VersionDetail {
         if (os.contains("win")) return "windows";
         if (os.contains("mac") || os.contains("darwin")) return "osx";
         return "linux";
+    }
+
+    private static boolean isArm64() {
+        String a = System.getProperty("os.arch").toLowerCase(Locale.ROOT);
+        return a.contains("aarch64") || a.contains("arm64");
+    }
+
+    /** The exact Mojang native classifier for this OS + CPU arch. */
+    private static String nativeClassifier() {
+        return switch (osTag()) {
+            case "windows" -> isArm64() ? "natives-windows-arm64" : "natives-windows";
+            case "osx" -> isArm64() ? "natives-macos-arm64" : "natives-macos";
+            default -> isArm64() ? "natives-linux-arm64" : "natives-linux";
+        };
     }
 
     public String id() { return id; }

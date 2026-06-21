@@ -101,6 +101,14 @@ public final class GameLauncher {
     }
 
     private static void extractNatives(VersionDetail vd, Path libsDir, Path nativesDir) throws Exception {
+        // Wipe first so a previous bad/other-arch extraction can't leave stale .dlls behind.
+        if (Files.isDirectory(nativesDir)) {
+            try (var walk = Files.walk(nativesDir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(pth -> {
+                    try { Files.deleteIfExists(pth); } catch (Exception ignored) { }
+                });
+            }
+        }
         Files.createDirectories(nativesDir);
         for (VersionDetail.Dl nat : vd.natives()) {
             Path jar = libsDir.resolve(nat.path());

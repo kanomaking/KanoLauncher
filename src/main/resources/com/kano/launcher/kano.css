@@ -159,6 +159,11 @@
     -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.7), 18, 0.35, 0, 0);
 }
 .play-circle:hover { -fx-background-color: #E53935; }
+.play-circle.loading {
+    -fx-background-color: #E0A200;
+    -fx-effect: dropshadow(gaussian, rgba(224,162,0,0.75), 18, 0.4, 0, 0);
+}
+.play-circle.loading:hover { -fx-background-color: #F0B400; }
 
 .edit-btn {
     -fx-background-color: transparent;
@@ -186,6 +191,14 @@
 .resize-grip { -fx-cursor: nw-resize; }
 .scroll-pane, .scroll-pane > .viewport { -fx-background-color: transparent; }
 .scroll-pane > .scroll-bar:vertical { -fx-background-color: transparent; }
+
+/* maximized: flat panel, no glow/rounding, fills the screen */
+.app-panel-flat {
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-border-width: 0;
+    -fx-effect: null;
+}
 
 /* ---- dialogs (Create / Edit / alerts) — match the launcher ---- */
 .kano-dialog {
@@ -254,3 +267,15 @@
 .context-menu .menu-item .label { -fx-text-fill: #C0C0C0; }
 .context-menu .menu-item:focused { -fx-background-color: #B71C1C; }
 .context-menu .menu-item:focused .label { -fx-text-fill: #FFFFFF; }
+
+/* selectable error/crash-log text area inside dialogs */
+.kano-dialog .error-text {
+    -fx-control-inner-background: #0a0b0f;
+    -fx-background-color: #0a0b0f;
+    -fx-text-fill: #E0E0E0;
+    -fx-font-family: "Consolas", "monospace";
+    -fx-font-size: 12px;
+    -fx-border-color: rgba(211,47,47,0.5);
+    -fx-border-radius: 6;
+}
+.kano-dialog .error-text .content { -fx-background-color: #0a0b0f; }

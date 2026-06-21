@@ -26,6 +26,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.Node;
 import javafx.scene.image.Image;
@@ -94,6 +95,17 @@ public class MainApp extends Application {
 
         StackPane shell = new StackPane(panel, buildResizeGrip());
         shell.getStyleClass().add("app-shell");
+
+        // Maximize: drop the glow padding + rounding so the window truly fills the screen (no edge gap).
+        stage.maximizedProperty().addListener((o, was, now) -> {
+            if (now) {
+                shell.setStyle("-fx-padding: 0;");
+                if (!panel.getStyleClass().contains("app-panel-flat")) panel.getStyleClass().add("app-panel-flat");
+            } else {
+                shell.setStyle("");
+                panel.getStyleClass().remove("app-panel-flat");
+            }
+        });
 
         showInstances();
 
@@ -318,7 +330,7 @@ public class MainApp extends Application {
         Label sub = new Label("Last played: " + lastPlayed(inst));
         sub.getStyleClass().add("card-sub");
         ProgressBar bar = progress(0.0);
-        play.setOnAction(e -> onPlay(inst, bar));
+        play.setOnAction(e -> onPlay(inst, bar, play));
 
         VBox info = new VBox(6, titleRow, meta, sub, bar);
         HBox.setHgrow(info, Priority.ALWAYS);
@@ -348,7 +360,7 @@ public class MainApp extends Application {
         Button play = new Button("▶");
         play.getStyleClass().add("play-circle");
         play.setStyle("-fx-min-width:40; -fx-min-height:40; -fx-max-width:40; -fx-max-height:40; -fx-font-size:15px;");
-        play.setOnAction(e -> onPlay(inst, bar));
+        play.setOnAction(e -> onPlay(inst, bar, play));
         row.getChildren().add(play);
 
         StackPane card = new StackPane(row, editIcon(inst));
@@ -396,8 +408,9 @@ public class MainApp extends Application {
                 .format(Instant.ofEpochMilli(inst.lastPlayedEpoch()));
     }
 
-    private void onPlay(Instance inst, ProgressBar bar) {
+    private void onPlay(Instance inst, ProgressBar bar, Button play) {
         if (instanceManager == null) { alert(Alert.AlertType.ERROR, "Error", initError); return; }
+        play.getStyleClass().add("loading"); // amber = preparing, before the bar even moves
         Thread t = new Thread(() -> {
             try {
                 Platform.runLater(() -> bar.setProgress(0));
@@ -424,6 +437,7 @@ public class MainApp extends Application {
                 String player = (accountManager != null && !accountManager.list().isEmpty())
                         ? accountManager.list().get(0).username() : "Player";
                 Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player);
+                Platform.runLater(() -> play.getStyleClass().remove("loading"));
 
                 // Mark last-played and refresh the view.
                 instanceManager.update(new Instance(inst.name(), inst.version(), inst.loader(),
@@ -439,7 +453,10 @@ public class MainApp extends Application {
                             "Game exited (code " + code + ")", tail));
                 }
             } catch (Exception ex) {
-                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Launch failed", String.valueOf(ex.getMessage())));
+                Platform.runLater(() -> {
+                    play.getStyleClass().remove("loading");
+                    alert(Alert.AlertType.ERROR, "Launch failed", String.valueOf(ex.getMessage()));
+                });
             }
         }, "play-" + inst.dirName());
         t.setDaemon(true);
@@ -719,7 +736,18 @@ public class MainApp extends Application {
         Alert a = new Alert(type);
         a.setTitle(title);
         a.setHeaderText(null);
-        a.setContentText(body);
+        if (type == Alert.AlertType.ERROR) {
+            // Selectable + copyable text (Ctrl+C / Ctrl+A) for crash logs.
+            TextArea ta = new TextArea(body);
+            ta.setEditable(false);
+            ta.setWrapText(true);
+            ta.getStyleClass().add("error-text");
+            ta.setPrefColumnCount(46);
+            ta.setPrefRowCount(Math.min(16, Math.max(3, body.split("\n").length + 1)));
+            a.getDialogPane().setContent(ta);
+        } else {
+            a.setContentText(body);
+        }
         styleDialog(a);
         a.showAndWait();
     }
