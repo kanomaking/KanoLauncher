@@ -15,6 +15,7 @@ import com.kano.launcher.core.Stats;
 import com.kano.launcher.core.VersionDetail;
 import com.kano.launcher.core.VersionManifest;
 
+import javafx.animation.PauseTransition;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -48,6 +49,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.util.Duration;
 import javafx.util.StringConverter;
 
 import java.nio.file.Files;
@@ -642,6 +644,13 @@ public class MainApp extends Application {
         searchBtn.setOnAction(e -> doSearch.run());
         q.setOnAction(e -> doSearch.run());
 
+        // Search-as-you-type, debounced so we don't hammer the API on every keystroke.
+        PauseTransition debounce = new PauseTransition(Duration.millis(350));
+        debounce.setOnFinished(e -> doSearch.run());
+        q.textProperty().addListener((o, a, b) -> debounce.playFromStart());
+        // Re-query when the target instance (version) changes.
+        instPick.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> doSearch.run());
+
         Button perfBtn = new Button("⚡ Performance Pack");
         perfBtn.getStyleClass().add("btn-outline");
         perfBtn.setOnAction(e -> installPerfPack(instPick.getValue(), perfBtn));
@@ -650,6 +659,8 @@ public class MainApp extends Application {
         bar.setAlignment(Pos.CENTER_LEFT);
         page.getChildren().addAll(title, bar, scroll);
         content.getChildren().setAll(page);
+
+        doSearch.run(); // show the popular-mods list immediately
     }
 
     private void runModSearch(Instance inst, String query, VBox results) {

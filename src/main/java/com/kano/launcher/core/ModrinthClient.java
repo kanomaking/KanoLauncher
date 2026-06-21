@@ -37,7 +37,9 @@ public final class ModrinthClient {
     public List<Hit> search(String query, String gameVersion, String loader, String projectType) throws Exception {
         String facets = "[[\"project_type:" + projectType + "\"],[\"versions:" + gameVersion + "\"]"
                 + (loader != null && !loader.isBlank() ? ",[\"categories:" + loader + "\"]" : "") + "]";
-        String url = API + "search?limit=30&index=relevance"
+        // No query yet → show the most-downloaded mods (a browsable list, like Modrinth's launcher).
+        String index = (query == null || query.isBlank()) ? "downloads" : "relevance";
+        String url = API + "search?limit=40&index=" + index
                 + "&query=" + enc(query == null ? "" : query)
                 + "&facets=" + enc(facets);
         JsonObject root = gson.fromJson(get(url), JsonObject.class);

@@ -117,6 +117,34 @@
 }
 .btn-filled:hover { -fx-background-color: #E53935; }
 
+/* ---- global form controls (main window) — match the theme ---- */
+.text-field {
+    -fx-background-color: #14151b;
+    -fx-text-fill: #FFFFFF;
+    -fx-prompt-text-fill: #7d7d7d;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(211,47,47,0.45);
+    -fx-border-radius: 8;
+    -fx-padding: 7 12 7 12;
+}
+.text-field:focused { -fx-border-color: #E53935; }
+.choice-box {
+    -fx-background-color: #14151b;
+    -fx-border-color: rgba(211,47,47,0.55);
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-padding: 4 10 4 10;
+    -fx-cursor: hand;
+}
+.choice-box:hover { -fx-border-color: #E53935; }
+.choice-box .label { -fx-text-fill: #E0E0E0; }
+.choice-box > .open-button > .arrow { -fx-background-color: #C0C0C0; }
+.combo-box, .combo-box .text-field {
+    -fx-background-color: #14151b;
+    -fx-background-radius: 8;
+}
+.combo-box .list-cell { -fx-text-fill: #E0E0E0; -fx-background-color: #14151b; }
+
 /* ---- instance cards ---- */
 .card {
     -fx-background-color: #0e0f15;
