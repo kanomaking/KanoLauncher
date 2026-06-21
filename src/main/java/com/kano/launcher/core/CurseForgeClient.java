@@ -158,12 +158,20 @@ public final class CurseForgeClient implements ContentSource {
         HttpResponse<String> r = http.send(
                 HttpRequest.newBuilder(URI.create(url))
                         .header("x-api-key", apiKey)
-                        .header("Accept", "application/json").GET().build(),
+                        .header("Accept", "application/json")
+                        .header("User-Agent", "KanoLauncher/1.0").GET().build(),
                 HttpResponse.BodyHandlers.ofString());
-        if (r.statusCode() == 403) throw new RuntimeException(
-                "CurseForge rejected the API key (403). Re-check it in Settings — get a valid one at "
-                + "console.curseforge.com → API Keys, and make sure there are no extra spaces.");
-        if (r.statusCode() != 200) throw new RuntimeException("CurseForge " + r.statusCode());
+        if (r.statusCode() == 403) {
+            String body = r.body() == null ? "" : r.body().strip();
+            throw new RuntimeException("CurseForge rejected the request (403). The key must be a Minecraft "
+                    + "API key from console.curseforge.com → API Keys (their API is gated). "
+                    + (body.isEmpty() ? "" : "CF said: " + (body.length() > 200 ? body.substring(0, 200) : body)));
+        }
+        if (r.statusCode() != 200) {
+            String body = r.body() == null ? "" : r.body().strip();
+            throw new RuntimeException("CurseForge " + r.statusCode()
+                    + (body.isEmpty() ? "" : ": " + (body.length() > 200 ? body.substring(0, 200) : body)));
+        }
         return r.body();
     }
 

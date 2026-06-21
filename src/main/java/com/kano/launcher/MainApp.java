@@ -1442,28 +1442,23 @@ public class MainApp extends Application {
     private void setupOptifine(Instance inst) {
         if (inst.loader() != Loader.FABRIC) {
             alert(Alert.AlertType.WARNING, "Fabric needed",
-                    "OptiFine setup uses OptiFabric, which needs a Fabric instance.");
+                    "OptiFine on Fabric uses OptiFabric — make this a Fabric instance first.");
             return;
         }
-        Thread t = new Thread(() -> {
-            try {
-                Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
-                ModInstaller.install(new ModrinthClient(), "optifabric", inst.version(), "fabric", modsDir, m -> {});
-                Platform.runLater(() -> {
-                    openFolder(modsDir);
-                    alert(Alert.AlertType.INFORMATION, "OptiFabric installed",
-                            "Now download OptiFine for " + inst.version() + " from optifine.net and drop the .jar "
-                            + "into the mods folder that just opened.\n\nNote: OptiFine conflicts with Sodium — "
-                            + "disable/remove Sodium in this instance if present.");
-                });
-            } catch (Exception ex) {
-                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "OptiFine setup failed",
-                        "Couldn't install OptiFabric for " + inst.version() + ": " + ex.getMessage()
-                        + "\n\nOptiFabric may not support this version yet."));
-            }
-        }, "optifine-setup");
-        t.setDaemon(true);
-        t.start();
+        try {
+            Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
+            Files.createDirectories(modsDir);
+            openFolder(modsDir);
+            alert(Alert.AlertType.INFORMATION, "OptiFine setup",
+                    "OptiFine needs TWO jars in this mods folder (just opened):\n\n"
+                    + "1) OptiFabric — for " + inst.version() + ", from CurseForge (search \"OptiFabric\").\n"
+                    + "2) OptiFine — for " + inst.version() + ", from optifine.net.\n\n"
+                    + "Drop both .jars here, then Play.\n\n"
+                    + "Heads up: brand-new versions (e.g. 1.21.11) usually aren't supported yet — use 1.21.1 or "
+                    + "1.20.1 for OptiFine. OptiFine conflicts with Sodium, so disable Sodium in this instance.");
+        } catch (Exception ex) {
+            alert(Alert.AlertType.ERROR, "OptiFine setup failed", String.valueOf(ex.getMessage()));
+        }
     }
 
     private static String formatDownloads(int n) {
