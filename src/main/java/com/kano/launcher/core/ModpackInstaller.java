@@ -1,6 +1,8 @@
 package com.kano.launcher.core;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -16,6 +18,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 /**
  * Imports a Modrinth modpack (.mrpack). An .mrpack is a zip containing {@code modrinth.index.json}
@@ -138,6 +141,75 @@ public final class ModpackInstaller {
             }
         }
         return n;
+    }
+
+    // ---- export ----
+
+    /** Instance subfolders worth shipping in an exported pack. */
+    private static final String[] EXPORT_DIRS =
+            {"mods", "config", "resourcepacks", "shaderpacks", "datapacks", "kubejs", "defaultconfigs", "scripts"};
+    private static final String[] EXPORT_FILES = {"options.txt"};
+
+    /**
+     * Export an instance as a self-contained {@code .mrpack}: a valid Modrinth index (with the MC
+     * version + loader) plus every mod/config/pack zipped under {@code overrides/}. Self-contained
+     * means it re-imports anywhere with no external downloads (worlds and logs are excluded;
+     * disabled mods are skipped).
+     */
+    public static Path export(Path instanceDir, String name, String mcVersion, Loader loader, Path outFile) throws Exception {
+        JsonObject root = new JsonObject();
+        root.addProperty("formatVersion", 1);
+        root.addProperty("game", "minecraft");
+        root.addProperty("versionId", "1.0.0");
+        root.addProperty("name", name == null || name.isBlank() ? "Exported Pack" : name);
+        root.add("files", new JsonArray()); // self-contained: everything is in overrides/
+        JsonObject deps = new JsonObject();
+        deps.addProperty("minecraft", mcVersion);
+        String lk = loaderKey(loader);
+        if (lk != null) deps.addProperty(lk, "*");
+        root.add("dependencies", deps);
+
+        Files.createDirectories(outFile.getParent());
+        String index = new GsonBuilder().setPrettyPrinting().create().toJson(root);
+        try (ZipOutputStream z = new ZipOutputStream(Files.newOutputStream(outFile))) {
+            z.putNextEntry(new ZipEntry("modrinth.index.json"));
+            z.write(index.getBytes(StandardCharsets.UTF_8));
+            z.closeEntry();
+            for (String d : EXPORT_DIRS) zipTree(z, instanceDir, instanceDir.resolve(d));
+            for (String f : EXPORT_FILES) {
+                Path p = instanceDir.resolve(f);
+                if (Files.isRegularFile(p)) {
+                    z.putNextEntry(new ZipEntry("overrides/" + f));
+                    Files.copy(p, z);
+                    z.closeEntry();
+                }
+            }
+        }
+        return outFile;
+    }
+
+    private static void zipTree(ZipOutputStream z, Path instanceDir, Path dir) throws Exception {
+        if (!Files.isDirectory(dir)) return;
+        try (var walk = Files.walk(dir)) {
+            for (Path p : (Iterable<Path>) walk::iterator) {
+                if (!Files.isRegularFile(p)) continue;
+                if (p.getFileName().toString().endsWith(".disabled")) continue;
+                String rel = instanceDir.relativize(p).toString().replace('\\', '/');
+                z.putNextEntry(new ZipEntry("overrides/" + rel));
+                Files.copy(p, z);
+                z.closeEntry();
+            }
+        }
+    }
+
+    private static String loaderKey(Loader loader) {
+        return switch (loader) {
+            case FABRIC -> "fabric-loader";
+            case QUILT -> "quilt-loader";
+            case NEOFORGE -> "neoforge";
+            case FORGE -> "forge";
+            default -> null;
+        };
     }
 
     // ---- helpers ----

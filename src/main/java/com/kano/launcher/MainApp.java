@@ -55,6 +55,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.TransferMode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
@@ -569,17 +570,50 @@ public class MainApp extends Application {
         HBox header = new HBox(14, title, grow, create, importBtn);
         header.setAlignment(Pos.CENTER_LEFT);
 
-        VBox body = new VBox(16);
         List<Instance> all = instanceManager == null ? List.of() : instanceManager.list();
-        if (all.isEmpty()) {
-            Label empty = new Label("No instances yet. Click “Create Instance” to make your first one.");
-            empty.getStyleClass().add("muted");
-            body.getChildren().add(empty);
-        } else {
+
+        TextField search = new TextField();
+        search.setPromptText("Search instances…");
+        HBox.setHgrow(search, Priority.ALWAYS);
+        ChoiceBox<String> sort = new ChoiceBox<>();
+        sort.getItems().addAll("Recently played", "Name (A–Z)", "Recently created");
+        sort.getSelectionModel().selectFirst();
+        Label sortLbl = new Label("Sort:");
+        sortLbl.getStyleClass().add("card-sub");
+        HBox filterBar = new HBox(10, search, sortLbl, sort);
+        filterBar.setAlignment(Pos.CENTER_LEFT);
+
+        VBox body = new VBox(16);
+        Runnable rebuild = () -> {
+            body.getChildren().clear();
+            if (all.isEmpty()) {
+                Label empty = new Label("No instances yet. Click “Create Instance” to make your first one.");
+                empty.getStyleClass().add("muted");
+                body.getChildren().add(empty);
+                return;
+            }
+            String q = search.getText() == null ? "" : search.getText().trim().toLowerCase();
+            List<Instance> shown = new ArrayList<>();
+            for (Instance inst : all) {
+                if (q.isEmpty() || inst.name().toLowerCase().contains(q)
+                        || inst.version().toLowerCase().contains(q)
+                        || inst.groupOrNone().toLowerCase().contains(q)) shown.add(inst);
+            }
+            switch (sort.getValue()) {
+                case "Name (A–Z)" -> shown.sort((a, b) -> a.name().compareToIgnoreCase(b.name()));
+                case "Recently created" -> shown.sort((a, b) -> Long.compare(b.createdEpoch(), a.createdEpoch()));
+                default -> shown.sort((a, b) -> Long.compare(b.lastPlayedEpoch(), a.lastPlayedEpoch()));
+            }
+            if (shown.isEmpty()) {
+                Label none = new Label("No instances match “" + search.getText() + "”.");
+                none.getStyleClass().add("muted");
+                body.getChildren().add(none);
+                return;
+            }
             // Group by label: named groups first (alphabetical), then everything ungrouped.
             java.util.Map<String, List<Instance>> groups = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             List<Instance> ungrouped = new ArrayList<>();
-            for (Instance inst : all) {
+            for (Instance inst : shown) {
                 String g = inst.groupOrNone();
                 if (g.isEmpty()) ungrouped.add(inst);
                 else groups.computeIfAbsent(g, k -> new ArrayList<>()).add(inst);
@@ -587,14 +621,18 @@ public class MainApp extends Application {
             boolean anyNamed = !groups.isEmpty();
             for (var en : groups.entrySet()) body.getChildren().add(groupSection(en.getKey(), en.getValue(), true));
             if (!ungrouped.isEmpty()) body.getChildren().add(groupSection(anyNamed ? "Ungrouped" : "", ungrouped, false));
-        }
+        };
+        rebuild.run();
+        search.textProperty().addListener((o, a, b) -> rebuild.run());
+        sort.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> rebuild.run());
 
         ScrollPane scroll = new ScrollPane(body);
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("scroll-pane");
         VBox.setVgrow(scroll, Priority.ALWAYS);
 
-        page.getChildren().addAll(header, scroll);
+        if (all.isEmpty()) page.getChildren().addAll(header, scroll);
+        else page.getChildren().addAll(header, filterBar, scroll);
         content.getChildren().setAll(page);
     }
 
@@ -909,6 +947,18 @@ public class MainApp extends Application {
         optHelp.getStyleClass().add("muted");
         optHelp.setWrapText(true);
 
+        Button openFolderBtn = new Button("Open Folder");
+        openFolderBtn.getStyleClass().add("btn-outline");
+        openFolderBtn.setOnAction(e -> openFolder(instanceManager.instanceDir(inst)));
+        Button cloneBtn = new Button("Clone");
+        cloneBtn.getStyleClass().add("btn-outline");
+        cloneBtn.setOnAction(e -> cloneInstanceDialog(inst));
+        Button exportBtn = new Button("Export .mrpack");
+        exportBtn.getStyleClass().add("btn-outline");
+        exportBtn.setOnAction(e -> exportInstance(inst));
+        HBox manageRow = new HBox(10, openFolderBtn, cloneBtn, exportBtn);
+        manageRow.setAlignment(Pos.CENTER_LEFT);
+
         VBox settingsContent = new VBox(12, profLbl, swatches,
                 settingRow("Name", nameF),
                 settingRow("RAM", ramBox),
@@ -917,6 +967,7 @@ public class MainApp extends Application {
                 settingRow("Extra JVM args", jvmF),
                 settingRow("Group", groupF),
                 saveSettings,
+                new Region(), manageRow,
                 new Region(), optifine, optHelp,
                 new Region(), del);
         settingsContent.setPadding(new Insets(12));
@@ -983,8 +1034,40 @@ public class MainApp extends Application {
         sp.setFitToWidth(true);
         sp.getStyleClass().add("scroll-pane");
         VBox.setVgrow(sp, Priority.ALWAYS);
-        VBox box = new VBox(10, header, sp);
+        Label dropHint = new Label("Tip: drag files here to add them.");
+        dropHint.getStyleClass().add("muted");
+        VBox box = new VBox(10, header, sp, dropHint);
         box.setPadding(new Insets(12));
+
+        // Drag-and-drop: drop any jar/zip onto the tab and it lands in the instance's folder.
+        box.setOnDragOver(e -> {
+            if (e.getDragboard().hasFiles()) e.acceptTransferModes(TransferMode.COPY);
+            e.consume();
+        });
+        box.setOnDragDropped(e -> {
+            var db = e.getDragboard();
+            boolean ok = false;
+            if (db.hasFiles()) {
+                try {
+                    Path d = instanceManager.instanceDir(inst).resolve(folder);
+                    Files.createDirectories(d);
+                    int n = 0;
+                    for (java.io.File file : db.getFiles()) {
+                        if (file.isFile()) {
+                            Files.copy(file.toPath(), d.resolve(file.getName()),
+                                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            n++;
+                        }
+                    }
+                    ok = n > 0;
+                    populateFolderItems(inst, folder, listBox);
+                } catch (Exception ex) {
+                    alert(Alert.AlertType.ERROR, "Drop failed", String.valueOf(ex.getMessage()));
+                }
+            }
+            e.setDropCompleted(ok);
+            e.consume();
+        });
         return tab(title, box);
     }
 
@@ -1317,11 +1400,12 @@ public class MainApp extends Application {
             }
         }
         if (items.isEmpty()) {
-            Label none = new Label("Nothing here yet — use “+ Add”.");
+            Label none = new Label("Nothing here yet — use “+ Add”, or drag files in.");
             none.getStyleClass().add("muted");
             list.getChildren().add(none);
             return;
         }
+        java.util.Map<String, HBox> rowByFile = new java.util.HashMap<>();
         for (Path f : items) {
             String fn = f.getFileName().toString();
             boolean disabled = fn.toLowerCase().endsWith(".disabled");
@@ -1351,10 +1435,65 @@ public class MainApp extends Application {
             });
             HBox row = new HBox(10, info, toggle, remove);
             row.setAlignment(Pos.CENTER_LEFT);
+            rowByFile.put(display, row);
             StackPane card = new StackPane(row);
             card.getStyleClass().add("card");
             list.getChildren().add(card);
         }
+
+        // Per-row update: check tracked items in this folder off-thread; reveal a gold "⬆ Update"
+        // button on each row whose newest compatible build differs from what's installed.
+        Thread chk = new Thread(() -> {
+            try {
+                for (ModTracker.Entry en : new ModTracker(instanceManager.instanceDir(inst)).list()) {
+                    if (!folder.equals(en.folder())) continue;
+                    HBox row = rowByFile.get(en.filename());
+                    if (row == null) continue;
+                    ContentSource src = sourceForTracked(en.source());
+                    String loader = modLoaderTag(inst, en.type());
+                    ModrinthClient.ModFile pf = primaryFile(srcLatest(src, en.projectId(), inst.version(), loader));
+                    if (pf != null && !pf.filename().equals(en.filename())) {
+                        Platform.runLater(() -> {
+                            Button up = new Button("⬆ Update");
+                            up.getStyleClass().add("btn-update");
+                            up.setOnAction(e -> updateSingleMod(inst, en, folder, list));
+                            row.getChildren().add(1, up);
+                        });
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }, "row-update-check");
+        chk.setDaemon(true);
+        chk.start();
+    }
+
+    /** Update one tracked item to its newest compatible build, then refresh the folder list. */
+    private void updateSingleMod(Instance inst, ModTracker.Entry en, String folder, VBox list) {
+        Thread t = new Thread(() -> {
+            try {
+                Path instDir = instanceManager.instanceDir(inst);
+                ContentSource src = sourceForTracked(en.source());
+                String loader = modLoaderTag(inst, en.type());
+                ModrinthClient.ModFile pf = primaryFile(srcLatest(src, en.projectId(), inst.version(), loader));
+                if (pf == null) {
+                    Platform.runLater(() -> alert(Alert.AlertType.INFORMATION, "No update",
+                            "No compatible build found for " + en.name() + "."));
+                    return;
+                }
+                Path d = instDir.resolve(en.folder());
+                Files.deleteIfExists(d.resolve(en.filename()));
+                Files.deleteIfExists(d.resolve(en.filename() + ".disabled"));
+                ModInstaller.install(src, en.projectId(), inst.version(), loader, d, m -> {});
+                new ModTracker(instDir).record(new ModTracker.Entry(
+                        en.projectId(), en.source(), en.type(), en.folder(), pf.filename(), en.name()));
+                Platform.runLater(() -> populateFolderItems(inst, folder, list));
+            } catch (Exception ex) {
+                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Update failed", String.valueOf(ex.getMessage())));
+            }
+        }, "update-single");
+        t.setDaemon(true);
+        t.start();
     }
 
     // ---- worlds ----
@@ -1907,6 +2046,56 @@ public class MainApp extends Application {
                 alert(Alert.AlertType.ERROR, "Modpack import failed", String.valueOf(ex.getMessage()));
             });
         }
+    }
+
+    private void cloneInstanceDialog(Instance inst) {
+        Dialog<ButtonType> d = new Dialog<>();
+        d.setTitle("Clone Instance");
+        d.setHeaderText("Duplicate \"" + inst.name() + "\"");
+        TextField nm = new TextField(inst.name() + " copy");
+        CheckBox keep = new CheckBox("Copy worlds too (saves/)");
+        VBox box = new VBox(10, new Label("New name"), nm, keep);
+        box.setPadding(new Insets(12));
+        d.getDialogPane().setContent(box);
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        styleDialog(d);
+        if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            Thread t = new Thread(() -> {
+                try {
+                    instanceManager.cloneInstance(inst, nm.getText(), keep.isSelected());
+                    Platform.runLater(() -> {
+                        showInstances();
+                        alert(Alert.AlertType.INFORMATION, "Cloned", "Created a copy of " + inst.name() + ".");
+                    });
+                } catch (Exception ex) {
+                    Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Clone failed", String.valueOf(ex.getMessage())));
+                }
+            }, "clone-instance");
+            t.setDaemon(true);
+            t.start();
+        }
+    }
+
+    private void exportInstance(Instance inst) {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Export instance as .mrpack");
+        fc.setInitialFileName(inst.name().replaceAll("[^a-zA-Z0-9-_ ]", "").trim() + ".mrpack");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Modrinth modpack", "*.mrpack"));
+        java.io.File f = fc.showSaveDialog(stage);
+        if (f == null) return;
+        Thread t = new Thread(() -> {
+            try {
+                Path out = f.toPath();
+                ModpackInstaller.export(instanceManager.instanceDir(inst), inst.name(), inst.version(), inst.loader(), out);
+                Platform.runLater(() -> alert(Alert.AlertType.INFORMATION, "Exported",
+                        inst.name() + " → " + out.getFileName()
+                        + "\nSelf-contained (mods + config bundled). Worlds excluded."));
+            } catch (Exception ex) {
+                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Export failed", String.valueOf(ex.getMessage())));
+            }
+        }, "export-instance");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void setupOptifine(Instance inst) {

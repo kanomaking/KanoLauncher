@@ -61,6 +61,40 @@ public final class InstanceManager {
         return i;
     }
 
+    /**
+     * Duplicate an instance: copies its files into a fresh folder and registers a new entry that
+     * keeps the version/loader/settings. Worlds (the {@code saves/} folder) are copied only when
+     * {@code keepWorlds} is true.
+     */
+    public Instance cloneInstance(Instance src, String newName, boolean keepWorlds) throws Exception {
+        String clean = newName == null || newName.isBlank() ? src.name() + " copy" : newName.trim();
+        String dirName = uniqueDir(sanitize(clean));
+        Path srcDir = instancesDir.resolve(src.dirName());
+        Path dstDir = instancesDir.resolve(dirName);
+        Files.createDirectories(dstDir);
+        if (Files.isDirectory(srcDir)) {
+            try (var walk = Files.walk(srcDir)) {
+                for (Path p : (Iterable<Path>) walk::iterator) {
+                    Path rel = srcDir.relativize(p);
+                    if (rel.toString().isEmpty()) continue;
+                    if (!keepWorlds && rel.getName(0).toString().equals("saves")) continue;
+                    Path target = dstDir.resolve(rel.toString());
+                    if (Files.isDirectory(p)) Files.createDirectories(target);
+                    else {
+                        Files.createDirectories(target.getParent());
+                        Files.copy(p, target, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            }
+        }
+        Instance c = new Instance(clean, src.version(), src.loader(), dirName,
+                System.currentTimeMillis(), 0L, src.ramMb(), src.iconOrDefault(),
+                src.width(), src.height(), src.fullscreen(), src.jvmArgsOrEmpty(), src.groupOrNone());
+        instances.add(c);
+        save();
+        return c;
+    }
+
     public void delete(Instance i) throws Exception {
         if (instances.removeIf(x -> x.dirName().equals(i.dirName()))) save();
         // instance folder is left on disk for safety; a future "delete files" option can remove it

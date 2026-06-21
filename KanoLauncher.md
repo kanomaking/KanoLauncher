@@ -249,8 +249,8 @@ The launcher should make Minecraft run as fast as possible out of the box — hi
 - 🟢 **Exact-compatibility browsing**: only show mods / resource packs / shaders compatible with the instance's exact version **and** loader. Incompatible content doesn't appear (filter by declared compatibility — see §4.3 honesty note).
 - 🟢 **One-click dependency resolution**: required libs/APIs/sub-deps added automatically in the background (Modrinth-only for clean graphs in v1 — §4.3/§4.4).
 - 🟡 **Conflict detection + suggestions**: warn when Mod A breaks Mod B; suggest alternatives/reordering (scope to what metadata supports — declared incompatibilities, dup mod-ids; "suggest alternatives" is best-effort).
-- 🟡 **Bulk operations**: ✅ *update all mods in one click* shipped (gold conditional "Update All" button, §11). Remaining: export an instance as a modpack with **version-lock** files; **clone instance keeping only the mod list** (not worlds).
-- 🟢 **Drag-and-drop offline content**: drop any jar/pack into the instance folder and it appears as a selectable mod/resource pack — no manual file management (§4.3 local-resources).
+- 🟡 **Bulk operations**: ✅ *update all mods in one click* shipped (gold conditional "Update All" button, §11) + ✅ per-group bulk update/RAM (§11) + ✅ **per-mod-row update button**. ✅ **Export instance as .mrpack** (self-contained: mods + config bundled under overrides/, worlds excluded — round-trip verified). ✅ **Clone instance** (copies files, optional keep-worlds). Remaining: version-locked files[] export (refs instead of bundled jars).
+- 🟢 **Drag-and-drop offline content**: ✅ shipped — drop any jar/pack onto an instance's content tab and it lands in that folder + appears in the list.
 
 ### Accounts
 - 🟡 **Multi-account elegance**: multiple Microsoft accounts, avatars in the top bar, one-click switch, silent token refresh behind the scenes (never re-login unless required). (Builds on the deferred multi-account work + skin/avatar rendering.)
