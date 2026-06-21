@@ -48,6 +48,11 @@ public final class GameInstaller {
     }
 
     public void install(VersionDetail vd, Progress progress) throws Exception {
+        install(vd, java.util.List.of(), progress);
+    }
+
+    /** Install vanilla files plus any extra libraries (e.g. Fabric loader libs). */
+    public void install(VersionDetail vd, List<VersionDetail.Dl> extraLibs, Progress progress) throws Exception {
         Path libsDir = cacheDir.resolve("libraries");
         Path assets = cacheDir.resolve("assets");
         Path indexFile = assets.resolve("indexes").resolve(vd.assetIndexId() + ".json");
@@ -58,7 +63,7 @@ public final class GameInstaller {
                 Files.readString(indexFile, StandardCharsets.UTF_8), JsonObject.class);
         JsonObject objects = index.getAsJsonObject("objects");
 
-        int total = 1 + vd.libraries().size() + vd.natives().size() + objects.size();
+        int total = 1 + vd.libraries().size() + vd.natives().size() + extraLibs.size() + objects.size();
         AtomicInteger done = new AtomicInteger();
 
         // Client jar (do it on this thread first).
@@ -80,6 +85,13 @@ public final class GameInstaller {
             futures.add(pool.submit(() -> {
                 Downloader.download(nat.url(), nat.sha1(), libsDir.resolve(nat.path()));
                 progress.update(done.incrementAndGet(), total, "natives");
+                return null;
+            }));
+        }
+        for (VersionDetail.Dl lib : extraLibs) {
+            futures.add(pool.submit(() -> {
+                Downloader.download(lib.url(), lib.sha1(), libsDir.resolve(lib.path()));
+                progress.update(done.incrementAndGet(), total, "fabric");
                 return null;
             }));
         }

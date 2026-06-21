@@ -28,7 +28,7 @@ public final class GameLauncher {
     private GameLauncher() {}
 
     public static Process launch(Instance inst, VersionDetail vd, Path javaExe, Path dataDir,
-                                 String playerName) throws Exception {
+                                 String playerName, FabricSupport.Profile fabric) throws Exception {
         Path libsDir = GameInstaller.librariesDir(dataDir);
         Path assets = GameInstaller.assetsDir(dataDir);
         Path clientJar = GameInstaller.clientJar(dataDir, vd.id());
@@ -41,6 +41,7 @@ public final class GameLauncher {
         // Classpath = all library jars + the client jar.
         List<String> cp = new ArrayList<>();
         for (VersionDetail.Dl lib : vd.libraries()) cp.add(libsDir.resolve(lib.path()).toString());
+        if (fabric != null) for (VersionDetail.Dl lib : fabric.libraries()) cp.add(libsDir.resolve(lib.path()).toString());
         cp.add(clientJar.toString());
         String classpath = String.join(File.pathSeparator, cp);
 
@@ -84,12 +85,18 @@ public final class GameLauncher {
             for (String tok : mc.split(" ")) if (!tok.isBlank()) gameArgs.add(sub(tok, subs));
         }
 
+        if (fabric != null) {
+            for (String a : fabric.jvmArgs()) jvmArgs.add(sub(a, subs));
+            for (String a : fabric.gameArgs()) gameArgs.add(sub(a, subs));
+        }
+        String mainClass = fabric != null ? fabric.mainClass() : vd.mainClass();
+
         List<String> command = new ArrayList<>();
         command.add(javaExe.toString());
         command.add("-Xmx" + inst.ramMb() + "m");
         command.add("-Xms" + Math.min(512, inst.ramMb()) + "m");
         command.addAll(jvmArgs);
-        command.add(vd.mainClass());
+        command.add(mainClass);
         command.addAll(gameArgs);
 
         Path log = gameDir.resolve("launcher-run.log");

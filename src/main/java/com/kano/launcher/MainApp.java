@@ -3,6 +3,7 @@ package com.kano.launcher;
 import com.kano.launcher.auth.MicrosoftAuth;
 import com.kano.launcher.core.AccountManager;
 import com.kano.launcher.core.Instance;
+import com.kano.launcher.core.FabricSupport;
 import com.kano.launcher.core.GameInstaller;
 import com.kano.launcher.core.GameLauncher;
 import com.kano.launcher.core.InstanceManager;
@@ -425,8 +426,14 @@ public class MainApp extends Application {
                 VersionDetail vd = VersionDetail.fetch(entry);
                 Path dataDir = resolveDataDir();
 
+                // Resolve Fabric loader if this is a Fabric instance.
+                FabricSupport.Profile fabric = inst.loader() == Loader.FABRIC
+                        ? FabricSupport.resolve(inst.version()) : null;
+                java.util.List<com.kano.launcher.core.VersionDetail.Dl> extraLibs =
+                        fabric != null ? fabric.libraries() : java.util.List.of();
+
                 // 1. Download everything (cached after first time).
-                new GameInstaller(dataDir).install(vd, (d, tot, label) -> {
+                new GameInstaller(dataDir).install(vd, extraLibs, (d, tot, label) -> {
                     if (d % 25 == 0 || d == tot) {
                         double frac = tot == 0 ? 0 : (double) d / tot;
                         Platform.runLater(() -> bar.setProgress(frac));
@@ -440,7 +447,7 @@ public class MainApp extends Application {
                 // 3. Launch (offline mode — works before app approval).
                 String player = (accountManager != null && !accountManager.list().isEmpty())
                         ? accountManager.list().get(0).username() : "Player";
-                Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player);
+                Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric);
                 Platform.runLater(() -> play.getStyleClass().remove("loading"));
 
                 // Mark last-played and refresh the view.
