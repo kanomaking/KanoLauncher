@@ -34,16 +34,23 @@ public final class GameLauncher {
 
     public static Process launch(Instance inst, VersionDetail vd, Path javaExe, Path dataDir,
                                  String playerName, FabricSupport.Profile fabric, String quickWorld) throws Exception {
-        return launch(inst, vd, javaExe, dataDir, playerName, fabric, null, quickWorld);
+        return launch(inst, vd, javaExe, dataDir, playerName, fabric, null, quickWorld, null);
     }
 
-    /**
-     * @param forge      NeoForge/Forge launch profile, or null for vanilla/Fabric
-     * @param quickWorld if non-null, boots straight into that single-player world folder.
-     */
     public static Process launch(Instance inst, VersionDetail vd, Path javaExe, Path dataDir,
                                  String playerName, FabricSupport.Profile fabric,
                                  ForgeSupport.Profile forge, String quickWorld) throws Exception {
+        return launch(inst, vd, javaExe, dataDir, playerName, fabric, forge, quickWorld, null);
+    }
+
+    /**
+     * @param forge       NeoForge/Forge launch profile, or null for vanilla/Fabric
+     * @param quickWorld  if non-null, boots straight into that single-player world folder
+     * @param quickServer if non-null ({@code host[:port]}), boots straight into that server
+     */
+    public static Process launch(Instance inst, VersionDetail vd, Path javaExe, Path dataDir,
+                                 String playerName, FabricSupport.Profile fabric,
+                                 ForgeSupport.Profile forge, String quickWorld, String quickServer) throws Exception {
         Path libsDir = GameInstaller.librariesDir(dataDir);
         Path assets = GameInstaller.assetsDir(dataDir);
         Path clientJar = GameInstaller.clientJar(dataDir, vd.id());
@@ -124,6 +131,10 @@ public final class GameLauncher {
         if (quickWorld != null && !quickWorld.isBlank()) {
             gameArgs.add("--quickPlaySingleplayer");
             gameArgs.add(quickWorld);
+        }
+        if (quickServer != null && !quickServer.isBlank()) {
+            gameArgs.add("--quickPlayMultiplayer");
+            gameArgs.add(quickServer);
         }
 
         String mainClass = forge != null ? forge.mainClass()

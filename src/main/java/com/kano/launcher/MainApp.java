@@ -17,6 +17,8 @@ import com.kano.launcher.core.ModInstaller;
 import com.kano.launcher.core.ModpackInstaller;
 import com.kano.launcher.core.ModTracker;
 import com.kano.launcher.core.ModrinthClient;
+import com.kano.launcher.core.ServerPing;
+import com.kano.launcher.core.ServerStore;
 import com.kano.launcher.core.Stats;
 import com.kano.launcher.core.UpdateChecker;
 import com.kano.launcher.core.VersionDetail;
@@ -984,6 +986,7 @@ public class MainApp extends Application {
                 contentTab(inst, "Shaders", "shaderpacks", "Shaders"),
                 contentTab(inst, "Data Packs", "datapacks", "Data Packs"),
                 worldsTab(inst),
+                serversTab(inst),
                 tab("Settings", settingsScroll));
         VBox.setVgrow(tabs, Priority.ALWAYS);
 
@@ -1143,10 +1146,14 @@ public class MainApp extends Application {
     }
 
     private void onPlay(Instance inst, ProgressBar bar, Button play) {
-        onPlay(inst, bar, play, null);
+        onPlay(inst, bar, play, null, null);
     }
 
     private void onPlay(Instance inst, ProgressBar bar, Button play, String quickWorld) {
+        onPlay(inst, bar, play, quickWorld, null);
+    }
+
+    private void onPlay(Instance inst, ProgressBar bar, Button play, String quickWorld, String quickServer) {
         if (instanceManager == null) { alert(Alert.AlertType.ERROR, "Error", initError); return; }
         play.getStyleClass().add("loading"); // amber = preparing, before the bar even moves
         Thread t = new Thread(() -> {
@@ -1189,7 +1196,7 @@ public class MainApp extends Application {
                 var activeAcc = activeAccount();
                 String player = activeAcc != null ? activeAcc.username() : "Player";
                 long sessionStart = System.currentTimeMillis();
-                Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric, forge, quickWorld);
+                Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric, forge, quickWorld, quickServer);
                 Platform.runLater(() -> play.getStyleClass().remove("loading"));
 
                 // Mark last-played and refresh the view.
@@ -1501,13 +1508,20 @@ public class MainApp extends Application {
     private Tab worldsTab(Instance inst) {
         Label hint = new Label("Single-player worlds in this instance. Play jumps straight in.");
         hint.getStyleClass().add("muted");
+        Region g = new Region();
+        HBox.setHgrow(g, Priority.ALWAYS);
         VBox listBox = new VBox(8);
+        Button restore = new Button("Restore backup…");
+        restore.getStyleClass().add("btn-outline");
+        restore.setOnAction(e -> restoreBackup(inst, listBox));
+        HBox header = new HBox(10, hint, g, restore);
+        header.setAlignment(Pos.CENTER_LEFT);
         populateWorlds(inst, listBox);
         ScrollPane sp = new ScrollPane(listBox);
         sp.setFitToWidth(true);
         sp.getStyleClass().add("scroll-pane");
         VBox.setVgrow(sp, Priority.ALWAYS);
-        VBox box = new VBox(10, hint, sp);
+        VBox box = new VBox(10, header, sp);
         box.setPadding(new Insets(12));
         return tab("Worlds", box);
     }
@@ -1546,6 +1560,9 @@ public class MainApp extends Application {
             Button openF = new Button("Open Folder");
             openF.getStyleClass().add("btn-outline");
             openF.setOnAction(e -> openFolder(w));
+            Button backup = new Button("Backup");
+            backup.getStyleClass().add("btn-outline");
+            backup.setOnAction(e -> backupWorld(inst, w));
             Button del = new Button("Delete");
             del.getStyleClass().add("btn-outline");
             del.setOnAction(e -> {
@@ -1553,12 +1570,195 @@ public class MainApp extends Application {
                 catch (Exception ex) { alert(Alert.AlertType.ERROR, "Delete failed", ex.getMessage()); }
             });
 
-            HBox row = new HBox(10, info, wbar, playW, openF, del);
+            HBox row = new HBox(10, info, wbar, playW, openF, backup, del);
             row.setAlignment(Pos.CENTER_LEFT);
             StackPane card = new StackPane(row);
             card.getStyleClass().add("card");
             list.getChildren().add(card);
         }
+    }
+
+    // ---- servers ----
+
+    private Tab serversTab(Instance inst) {
+        Button add = new Button("+ Add Server");
+        add.getStyleClass().add("btn-outline");
+        Region g = new Region();
+        HBox.setHgrow(g, Priority.ALWAYS);
+        Label hint = new Label("Favourite servers — live status, double-click Play to jump straight in.");
+        hint.getStyleClass().add("muted");
+        HBox header = new HBox(10, hint, g, add);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        VBox listBox = new VBox(8);
+        populateServers(inst, listBox);
+        add.setOnAction(e -> addServerDialog(inst, listBox));
+
+        ScrollPane sp = new ScrollPane(listBox);
+        sp.setFitToWidth(true);
+        sp.getStyleClass().add("scroll-pane");
+        VBox.setVgrow(sp, Priority.ALWAYS);
+        VBox box = new VBox(10, header, sp);
+        box.setPadding(new Insets(12));
+        return tab("Servers", box);
+    }
+
+    private void populateServers(Instance inst, VBox list) {
+        list.getChildren().clear();
+        var servers = new ServerStore(instanceManager.instanceDir(inst)).list();
+        if (servers.isEmpty()) {
+            Label none = new Label("No servers yet — use “+ Add Server”.");
+            none.getStyleClass().add("muted");
+            list.getChildren().add(none);
+            return;
+        }
+        for (ServerStore.Server srv : servers) {
+            Label name = new Label(srv.name());
+            name.getStyleClass().add("card-title-sm");
+            Label status = new Label(srv.address() + "   •   pinging…");
+            status.getStyleClass().add("card-sub");
+            VBox info = new VBox(2, name, status);
+            HBox.setHgrow(info, Priority.ALWAYS);
+
+            ProgressBar sbar = progress(0.0);
+            sbar.setMaxWidth(0);
+            sbar.setVisible(false);
+            sbar.setManaged(false);
+            Button play = new Button("▶ Play");
+            play.getStyleClass().add("btn-filled");
+            play.setOnAction(e -> onPlay(inst, sbar, play, null, srv.address()));
+            Button remove = new Button("Remove");
+            remove.getStyleClass().add("btn-outline");
+            remove.setOnAction(e -> {
+                new ServerStore(instanceManager.instanceDir(inst)).remove(srv.address());
+                populateServers(inst, list);
+            });
+            HBox row = new HBox(10, info, sbar, play, remove);
+            row.setAlignment(Pos.CENTER_LEFT);
+            StackPane card = new StackPane(row);
+            card.getStyleClass().add("card");
+            list.getChildren().add(card);
+
+            // Live status off-thread.
+            Thread t = new Thread(() -> {
+                try {
+                    ServerPing.Status st = ServerPing.ping(srv.address(), 4000);
+                    Platform.runLater(() -> status.setText(srv.address()
+                            + "   •   ● " + st.online() + "/" + st.max() + " online"
+                            + (st.latencyMs() >= 0 ? "   •   " + st.latencyMs() + " ms" : "")
+                            + (st.version().isBlank() ? "" : "   •   " + st.version())));
+                } catch (Exception ex) {
+                    Platform.runLater(() -> status.setText(srv.address() + "   •   offline / unreachable"));
+                }
+            }, "server-ping");
+            t.setDaemon(true);
+            t.start();
+        }
+    }
+
+    private void addServerDialog(Instance inst, VBox list) {
+        Dialog<ButtonType> d = new Dialog<>();
+        d.setTitle("Add Server");
+        d.setHeaderText("Add a server to " + inst.name());
+        TextField nm = new TextField();
+        nm.setPromptText("Name");
+        TextField addr = new TextField();
+        addr.setPromptText("address (e.g. mc.hypixel.net or host:port)");
+        VBox box = new VBox(10, new Label("Name"), nm, new Label("Address"), addr);
+        box.setPadding(new Insets(12));
+        d.getDialogPane().setContent(box);
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        styleDialog(d);
+        if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            String a = addr.getText().trim();
+            if (a.isBlank()) { alert(Alert.AlertType.ERROR, "Missing address", "Enter a server address."); return; }
+            String n = nm.getText().isBlank() ? a : nm.getText().trim();
+            new ServerStore(instanceManager.instanceDir(inst)).add(new ServerStore.Server(n, a));
+            populateServers(inst, list);
+        }
+    }
+
+    private void backupWorld(Instance inst, Path world) {
+        Thread t = new Thread(() -> {
+            try {
+                Path backups = instanceManager.instanceDir(inst).resolve("backups");
+                Files.createDirectories(backups);
+                String ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                        .withZone(ZoneId.systemDefault()).format(Instant.now());
+                String wn = world.getFileName().toString();
+                Path zip = backups.resolve(wn + "_" + ts + ".zip");
+                try (var z = new java.util.zip.ZipOutputStream(Files.newOutputStream(zip))) {
+                    try (var walk = Files.walk(world)) {
+                        for (Path p : (Iterable<Path>) walk::iterator) {
+                            if (!Files.isRegularFile(p)) continue;
+                            String rel = wn + "/" + world.relativize(p).toString().replace('\\', '/');
+                            z.putNextEntry(new java.util.zip.ZipEntry(rel));
+                            Files.copy(p, z);
+                            z.closeEntry();
+                        }
+                    }
+                }
+                Platform.runLater(() -> alert(Alert.AlertType.INFORMATION, "World backed up",
+                        wn + " → backups/" + zip.getFileName()));
+            } catch (Exception ex) {
+                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Backup failed", String.valueOf(ex.getMessage())));
+            }
+        }, "world-backup");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void restoreBackup(Instance inst, VBox list) {
+        Path backups = instanceManager.instanceDir(inst).resolve("backups");
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Restore world backup");
+        if (Files.isDirectory(backups)) fc.setInitialDirectory(backups.toFile());
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("World backup", "*.zip"));
+        java.io.File f = fc.showOpenDialog(stage);
+        if (f == null) return;
+        Thread t = new Thread(() -> {
+            try {
+                Path saves = instanceManager.instanceDir(inst).resolve("saves");
+                Files.createDirectories(saves);
+                // Top-level folder in the zip; don't clobber an existing world of the same name.
+                String topDir = null;
+                try (var zf = new java.util.zip.ZipFile(f)) {
+                    var en = zf.entries();
+                    if (en.hasMoreElements()) {
+                        String n = en.nextElement().getName().replace('\\', '/');
+                        int slash = n.indexOf('/');
+                        topDir = slash > 0 ? n.substring(0, slash) : n;
+                    }
+                }
+                String target = (topDir != null && Files.exists(saves.resolve(topDir))) ? topDir + "-restored" : topDir;
+                Path savesNorm = saves.normalize();
+                try (var zf = new java.util.zip.ZipFile(f)) {
+                    var entries = zf.entries();
+                    while (entries.hasMoreElements()) {
+                        var e = entries.nextElement();
+                        if (e.isDirectory()) continue;
+                        String n = e.getName().replace('\\', '/');
+                        String rel = (topDir != null && n.startsWith(topDir + "/"))
+                                ? target + n.substring(topDir.length()) : n;
+                        Path dest = saves.resolve(rel).normalize();
+                        if (!dest.startsWith(savesNorm)) continue; // zip-slip guard
+                        Files.createDirectories(dest.getParent());
+                        try (var in = zf.getInputStream(e)) {
+                            Files.copy(in, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        }
+                    }
+                }
+                String restored = target;
+                Platform.runLater(() -> {
+                    populateWorlds(inst, list);
+                    alert(Alert.AlertType.INFORMATION, "Restored", "World restored as “" + restored + "”.");
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Restore failed", String.valueOf(ex.getMessage())));
+            }
+        }, "world-restore");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void openFolder(Path dir) {

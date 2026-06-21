@@ -256,8 +256,8 @@ The launcher should make Minecraft run as fast as possible out of the box — hi
 - 🟡 **Multi-account elegance**: multiple Microsoft accounts, avatars in the top bar, one-click switch, silent token refresh behind the scenes (never re-login unless required). (Builds on the deferred multi-account work + skin/avatar rendering.)
 
 ### Worlds & servers
-- 🟡 **World management**: list all single-player worlds in the launcher — last played, size, seed, **backup/restore**, and **quick-launch directly into a world** (`--quickPlaySingleplayer`).
-- 🟡 **Server sidebar**: favorite servers under your instances — online status, player count, ping; double-click to join (`--quickPlayMultiplayer`). (Ping/status via standard server list ping protocol.)
+- 🟡 **World management**: ✅ list worlds (size + last played), quick-launch (`--quickPlaySingleplayer`), open folder, delete — plus **backup** (zip a world into `backups/`) and **restore** (unzip a backup back into `saves/`, never clobbering an existing world; zip-slip-guarded). Remaining: seed display.
+- 🟡 **Server sidebar**: ✅ shipped as a **Servers tab** per instance — add/remove favourites (`.kano-servers.json`), live status (online/max players, latency, version) via the standard Server List Ping protocol (`ServerPing`, verified live against Hypixel/CubeCraft), and **▶ Play = quick-join** (`--quickPlayMultiplayer host[:port]`).
 - 🔴 **Shareable modpack links**: generate a one-click private install link for friends (needs a tiny hosting/redirect component even if the launcher stays personal).
 
 ### Power-user UX
