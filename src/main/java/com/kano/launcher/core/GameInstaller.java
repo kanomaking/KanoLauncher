@@ -74,23 +74,25 @@ public final class GameInstaller {
         ExecutorService pool = Executors.newFixedThreadPool(THREADS);
         List<Future<?>> futures = new ArrayList<>();
 
+        // Libraries / natives / assets are immutable; download once, then trust existence on relaunch
+        // (no per-launch re-hashing of thousands of files — the big startup cost otherwise).
         for (VersionDetail.Dl lib : vd.libraries()) {
             futures.add(pool.submit(() -> {
-                Downloader.download(lib.url(), lib.sha1(), libsDir.resolve(lib.path()));
+                Downloader.downloadIfAbsent(lib.url(), lib.sha1(), libsDir.resolve(lib.path()));
                 progress.update(done.incrementAndGet(), total, "libraries");
                 return null;
             }));
         }
         for (VersionDetail.Dl nat : vd.natives()) {
             futures.add(pool.submit(() -> {
-                Downloader.download(nat.url(), nat.sha1(), libsDir.resolve(nat.path()));
+                Downloader.downloadIfAbsent(nat.url(), nat.sha1(), libsDir.resolve(nat.path()));
                 progress.update(done.incrementAndGet(), total, "natives");
                 return null;
             }));
         }
         for (VersionDetail.Dl lib : extraLibs) {
             futures.add(pool.submit(() -> {
-                Downloader.download(lib.url(), lib.sha1(), libsDir.resolve(lib.path()));
+                Downloader.downloadIfAbsent(lib.url(), lib.sha1(), libsDir.resolve(lib.path()));
                 progress.update(done.incrementAndGet(), total, "fabric");
                 return null;
             }));
@@ -100,7 +102,7 @@ public final class GameInstaller {
             String sub = hash.substring(0, 2);
             Path dest = assets.resolve("objects").resolve(sub).resolve(hash);
             futures.add(pool.submit(() -> {
-                Downloader.download(RESOURCES + sub + "/" + hash, hash, dest);
+                Downloader.downloadIfAbsent(RESOURCES + sub + "/" + hash, hash, dest);
                 progress.update(done.incrementAndGet(), total, "assets");
                 return null;
             }));

@@ -22,6 +22,18 @@ public final class Downloader {
 
     private Downloader() {}
 
+    /**
+     * Download {@code url} to {@code dest} only if it isn't already present — no re-hashing of the
+     * existing file. Use for immutable, content-addressed files (asset objects keyed by SHA-1,
+     * libraries keyed by Maven coordinate): once verified on first download they don't change, so
+     * re-hashing thousands of them on every launch is pure overhead. Freshly downloaded files are
+     * still SHA-1 verified.
+     */
+    public static void downloadIfAbsent(String url, String sha1, Path dest) throws Exception {
+        if (Files.exists(dest)) return;
+        download(url, sha1, dest);
+    }
+
     /** Download {@code url} to {@code dest}, verifying {@code sha1}. Skips if the file already matches. */
     public static void download(String url, String sha1, Path dest) throws Exception {
         if (Files.exists(dest) && (sha1 == null || sha1.equalsIgnoreCase(sha1(dest)))) return;

@@ -116,7 +116,7 @@ public final class ForgeSupport {
             String path = a.has("path") ? a.get("path").getAsString() : "";
             if (url.isBlank() || path.isBlank()) continue; // produced by a processor, not downloaded
             String sha1 = a.has("sha1") && !a.get("sha1").getAsString().isBlank() ? a.get("sha1").getAsString() : null;
-            Downloader.download(url, sha1, libDir.resolve(path));
+            Downloader.downloadIfAbsent(url, sha1, libDir.resolve(path));
         }
     }
 
