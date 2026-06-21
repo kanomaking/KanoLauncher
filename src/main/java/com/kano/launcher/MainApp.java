@@ -661,8 +661,8 @@ public class MainApp extends Application {
         if (url == null) return null;
         ImageView iv = new ImageView(new Image(url.toExternalForm()));
         iv.setPreserveRatio(true);
-        iv.setFitHeight(300);
-        iv.setOpacity(0.10);
+        iv.setFitHeight(600);
+        iv.setOpacity(0.22);
         iv.setMouseTransparent(true);
         StackPane holder = new StackPane(iv);
         StackPane.setAlignment(iv, Pos.BOTTOM_RIGHT);
