@@ -49,7 +49,7 @@ public final class InstanceManager {
         String dirName = uniqueDir(sanitize(clean));
         Files.createDirectories(instancesDir.resolve(dirName));
         Instance i = new Instance(clean, version, loader, dirName,
-                System.currentTimeMillis(), 0L, DEFAULT_RAM_MB, "grass");
+                System.currentTimeMillis(), 0L, DEFAULT_RAM_MB, "grass", 0, 0, false, "");
         instances.add(i);
         save();
         return i;

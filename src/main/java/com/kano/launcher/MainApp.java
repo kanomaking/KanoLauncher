@@ -496,29 +496,68 @@ public class MainApp extends Application {
             swatches.getChildren().add(sw);
         }
 
-        // RAM setting
-        Label ramLbl = new Label("RAM (MB)");
-        ramLbl.getStyleClass().add("card-sub");
-        TextField ram = new TextField(String.valueOf(inst.ramMb()));
-        ram.setMaxWidth(120);
-        Button saveRam = new Button("Save");
-        saveRam.getStyleClass().add("btn-outline");
-        saveRam.setOnAction(e -> {
+        // ---- Settings form ----
+        Label setLbl = new Label("Settings");
+        setLbl.getStyleClass().add("card-title-sm");
+
+        TextField nameF = new TextField(inst.name());
+        nameF.setPrefWidth(280);
+        TextField ramF = new TextField(String.valueOf(inst.ramMb()));
+        ramF.setMaxWidth(120);
+        TextField widthF = new TextField(inst.width() > 0 ? String.valueOf(inst.width()) : "");
+        widthF.setPromptText("default");
+        widthF.setMaxWidth(90);
+        TextField heightF = new TextField(inst.height() > 0 ? String.valueOf(inst.height()) : "");
+        heightF.setPromptText("default");
+        heightF.setMaxWidth(90);
+        Label x = new Label("×");
+        x.getStyleClass().add("card-sub");
+        HBox resBox = new HBox(8, widthF, x, heightF);
+        resBox.setAlignment(Pos.CENTER_LEFT);
+        CheckBox fullF = new CheckBox("Launch fullscreen");
+        fullF.setSelected(inst.fullscreen());
+        TextField jvmF = new TextField(inst.jvmArgsOrEmpty());
+        jvmF.setPromptText("-XX:+UseG1GC … (optional)");
+        jvmF.setPrefWidth(360);
+
+        Button saveSettings = new Button("Save Settings");
+        saveSettings.getStyleClass().add("btn-filled");
+        saveSettings.setOnAction(e -> {
             try {
-                instanceManager.update(inst.withRam(Integer.parseInt(ram.getText().trim())));
-                alert(Alert.AlertType.INFORMATION, "Saved", "RAM set to " + ram.getText().trim() + " MB.");
+                String nm = nameF.getText().isBlank() ? inst.name() : nameF.getText().trim();
+                int ramMb = Integer.parseInt(ramF.getText().trim());
+                int w = widthF.getText().isBlank() ? 0 : Integer.parseInt(widthF.getText().trim());
+                int h = heightF.getText().isBlank() ? 0 : Integer.parseInt(heightF.getText().trim());
+                instanceManager.update(inst.withSettings(nm, ramMb, w, h, fullF.isSelected(), jvmF.getText().trim()));
+                showInstanceDetail(currentInstance(inst));
+            } catch (NumberFormatException nf) {
+                alert(Alert.AlertType.ERROR, "Invalid number", "RAM and resolution must be whole numbers.");
             } catch (Exception ex) {
-                alert(Alert.AlertType.ERROR, "Invalid value", "Enter a number, e.g. 4096.");
+                alert(Alert.AlertType.ERROR, "Save failed", ex.getMessage());
             }
         });
-        HBox ramRow = new HBox(10, ram, saveRam);
-        ramRow.setAlignment(Pos.CENTER_LEFT);
 
-        // Mods + resource packs
+        VBox settingsBox = new VBox(8,
+                settingRow("Name", nameF),
+                settingRow("RAM (MB)", ramF),
+                settingRow("Resolution", resBox),
+                settingRow("", fullF),
+                settingRow("Extra JVM args", jvmF),
+                saveSettings);
+
+        // ---- Mods + resource packs ----
         Label modsLbl = new Label("Mods");
         modsLbl.getStyleClass().add("card-title-sm");
+        Button addMods = new Button("+ Add Mods");
+        addMods.getStyleClass().add("btn-outline");
+        addMods.setOnAction(e -> showBrowse(inst));
+        Region modsGrow = new Region();
+        HBox.setHgrow(modsGrow, Priority.ALWAYS);
+        HBox modsHeader = new HBox(10, modsLbl, modsGrow, addMods);
+        modsHeader.setAlignment(Pos.CENTER_LEFT);
         VBox modsList = new VBox(8);
         populateInstalledMods(inst, modsList);
+
         Label rpLbl = new Label("Resource Packs");
         rpLbl.getStyleClass().add("card-title-sm");
         VBox rpList = new VBox(8);
@@ -531,8 +570,8 @@ public class MainApp extends Application {
             catch (Exception ex) { alert(Alert.AlertType.ERROR, "Delete failed", ex.getMessage()); }
         });
 
-        VBox bodyBox = new VBox(12, profLbl, swatches, ramLbl, ramRow,
-                modsLbl, modsList, rpLbl, rpList, new Region(), del);
+        VBox bodyBox = new VBox(14, setLbl, profLbl, swatches, settingsBox,
+                modsHeader, modsList, rpLbl, rpList, new Region(), del);
         ScrollPane scroll = new ScrollPane(bodyBox);
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("scroll-pane");
@@ -540,6 +579,15 @@ public class MainApp extends Application {
 
         page.getChildren().addAll(header, scroll);
         content.getChildren().setAll(page);
+    }
+
+    private HBox settingRow(String label, javafx.scene.Node control) {
+        Label l = new Label(label);
+        l.getStyleClass().add("card-sub");
+        l.setMinWidth(120);
+        HBox h = new HBox(10, l, control);
+        h.setAlignment(Pos.CENTER_LEFT);
+        return h;
     }
 
     private Instance currentInstance(Instance inst) {
@@ -835,19 +883,34 @@ public class MainApp extends Application {
             return;
         }
         for (Path jar : jars) {
-            Label name = new Label(jar.getFileName().toString());
+            boolean disabled = jar.toString().toLowerCase().endsWith(".disabled");
+            String display = jar.getFileName().toString().replaceAll("(?i)\\.disabled$", "");
+            Label name = new Label(display + (disabled ? "   (disabled)" : ""));
             name.getStyleClass().add("card-title-sm");
+            if (disabled) name.setStyle("-fx-text-fill: #7d7d7d;");
             Label size = new Label(fileSize(jar));
             size.getStyleClass().add("card-sub");
             VBox info = new VBox(2, name, size);
             HBox.setHgrow(info, Priority.ALWAYS);
+
+            Button toggle = new Button(disabled ? "Enable" : "Disable");
+            toggle.getStyleClass().add("btn-outline");
+            toggle.setOnAction(e -> {
+                try {
+                    Path target = disabled
+                            ? jar.resolveSibling(display)
+                            : jar.resolveSibling(jar.getFileName().toString() + ".disabled");
+                    Files.move(jar, target);
+                    populateInstalledMods(inst, list);
+                } catch (Exception ex) { alert(Alert.AlertType.ERROR, "Toggle failed", ex.getMessage()); }
+            });
             Button remove = new Button("Remove");
             remove.getStyleClass().add("btn-outline");
             remove.setOnAction(e -> {
                 try { Files.deleteIfExists(jar); populateInstalledMods(inst, list); }
                 catch (Exception ex) { alert(Alert.AlertType.ERROR, "Remove failed", ex.getMessage()); }
             });
-            HBox row = new HBox(12, info, remove);
+            HBox row = new HBox(10, info, toggle, remove);
             row.setAlignment(Pos.CENTER_LEFT);
             StackPane card = new StackPane(row);
             card.getStyleClass().add("card");
@@ -875,7 +938,9 @@ public class MainApp extends Application {
         };
     }
 
-    private void showBrowse() {
+    private void showBrowse() { showBrowse(null); }
+
+    private void showBrowse(Instance preselect) {
         selectNav(navByName.get("Browse Modpacks"));
         VBox page = new VBox(14);
         page.getStyleClass().add("content");
@@ -895,6 +960,11 @@ public class MainApp extends Application {
         instPick.getItems().addAll(insts);
         instPick.setConverter(instanceConverter());
         instPick.getSelectionModel().selectFirst();
+        if (preselect != null) {
+            for (Instance it : instPick.getItems()) {
+                if (it.dirName().equals(preselect.dirName())) { instPick.getSelectionModel().select(it); break; }
+            }
+        }
 
         ChoiceBox<String> typeBox = new ChoiceBox<>();
         typeBox.getItems().addAll("Mods", "Modpacks", "Resource Packs", "Shaders", "Data Packs");

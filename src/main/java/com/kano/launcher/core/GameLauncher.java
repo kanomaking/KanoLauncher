@@ -89,6 +89,17 @@ public final class GameLauncher {
             for (String a : fabric.jvmArgs()) jvmArgs.add(sub(a, subs));
             for (String a : fabric.gameArgs()) gameArgs.add(sub(a, subs));
         }
+
+        // Per-instance extras.
+        if (inst.jvmArgs() != null && !inst.jvmArgs().isBlank()) {
+            for (String tok : inst.jvmArgs().trim().split("\\s+")) jvmArgs.add(tok);
+        }
+        if (inst.width() > 0 && inst.height() > 0) {
+            gameArgs.add("--width"); gameArgs.add(String.valueOf(inst.width()));
+            gameArgs.add("--height"); gameArgs.add(String.valueOf(inst.height()));
+        }
+        if (inst.fullscreen()) gameArgs.add("--fullscreen");
+
         String mainClass = fabric != null ? fabric.mainClass() : vd.mainClass();
 
         List<String> command = new ArrayList<>();
