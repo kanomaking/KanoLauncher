@@ -176,6 +176,13 @@
     -fx-min-width: 44; -fx-min-height: 44; -fx-max-width: 44; -fx-max-height: 44;
 }
 .icon-glyph { -fx-text-fill: #C0C0C0; -fx-font-size: 26px; }
+.mod-icon {
+    -fx-background-color: #07080b;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-border-color: rgba(211,47,47,0.55);
+    -fx-alignment: center;
+}
 
 .play-circle {
     -fx-background-color: #D32F2F;

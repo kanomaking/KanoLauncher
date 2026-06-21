@@ -707,11 +707,37 @@ public class MainApp extends Application {
         install.getStyleClass().add("btn-outline");
         install.setOnAction(e -> installMod(hit, inst, install));
 
-        HBox row = new HBox(14, info, install);
+        HBox row = new HBox(14, modIcon(hit.iconUrl()), info, install);
         row.setAlignment(Pos.CENTER_LEFT);
         StackPane card = new StackPane(row);
         card.getStyleClass().add("card");
         return card;
+    }
+
+    /** 48x48 rounded mod icon loaded from Modrinth; falls back to a glyph if missing/unsupported (e.g. webp). */
+    private Region modIcon(String url) {
+        StackPane tile = new StackPane();
+        tile.getStyleClass().add("mod-icon");
+        tile.setMinSize(48, 48);
+        tile.setMaxSize(48, 48);
+        Label placeholder = new Label("❖");
+        placeholder.getStyleClass().add("icon-glyph");
+        placeholder.setStyle("-fx-font-size: 20px;");
+        tile.getChildren().add(placeholder);
+        if (url != null && !url.isBlank()) {
+            try {
+                ImageView iv = new ImageView(new Image(url, 48, 48, true, true, true)); // async load
+                iv.setFitWidth(48);
+                iv.setFitHeight(48);
+                Rectangle clip = new Rectangle(48, 48);
+                clip.setArcWidth(12);
+                clip.setArcHeight(12);
+                iv.setClip(clip);
+                tile.getChildren().add(iv); // covers the placeholder once loaded; if it errors, placeholder shows
+            } catch (Exception ignored) {
+            }
+        }
+        return tile;
     }
 
     private void installMod(ModrinthClient.Hit hit, Instance inst, Button install) {
