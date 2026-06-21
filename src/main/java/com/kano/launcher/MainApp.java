@@ -13,6 +13,7 @@ import com.kano.launcher.core.InstanceManager;
 import com.kano.launcher.core.JreProvider;
 import com.kano.launcher.core.Loader;
 import com.kano.launcher.core.ModInstaller;
+import com.kano.launcher.core.ModTracker;
 import com.kano.launcher.core.ModrinthClient;
 import com.kano.launcher.core.Stats;
 import com.kano.launcher.core.UpdateChecker;
@@ -857,6 +858,12 @@ public class MainApp extends Application {
         HBox.setHgrow(g, Priority.ALWAYS);
         HBox header = new HBox(10, g, add);
         header.setAlignment(Pos.CENTER_LEFT);
+        if ("mods".equals(folder)) {
+            Button updateAll = new Button("Update All");
+            updateAll.getStyleClass().add("btn-outline");
+            updateAll.setOnAction(e -> updateAllMods(inst));
+            header.getChildren().add(1, updateAll); // [spacer, Update All, + Add]
+        }
         VBox listBox = new VBox(8);
         populateFolderItems(inst, folder, listBox);
         ScrollPane sp = new ScrollPane(listBox);
@@ -1626,6 +1633,13 @@ public class MainApp extends Application {
                 Path dir = instanceManager.instanceDir(inst).resolve(folder);
                 int n = ModInstaller.install(browseSource, hit.projectId(), inst.version(),
                         depLoader, dir, msg -> {});
+                try {
+                    var vers = browseSource.versions(hit.projectId(), inst.version(), depLoader);
+                    ModrinthClient.ModFile pf = primaryFile(vers.isEmpty() ? null : vers.get(0));
+                    if (pf != null) new ModTracker(instanceManager.instanceDir(inst)).record(
+                            new ModTracker.Entry(hit.projectId(), browseSource.id(), type, folder, pf.filename(), hit.title()));
+                } catch (Exception ignore) {
+                }
                 Platform.runLater(() -> {
                     install.setText("Installed ✓");
                     alert(Alert.AlertType.INFORMATION, "Installed",
@@ -1657,6 +1671,13 @@ public class MainApp extends Application {
             for (String slug : PERF_MODS) {
                 try {
                     ok += ModInstaller.install(client, slug, inst.version(), "fabric", modsDir, m -> {});
+                    try {
+                        var vers = client.versions(slug, inst.version(), "fabric");
+                        ModrinthClient.ModFile pf = primaryFile(vers.isEmpty() ? null : vers.get(0));
+                        if (pf != null) new ModTracker(instanceManager.instanceDir(inst)).record(
+                                new ModTracker.Entry(slug, "modrinth", "mod", "mods", pf.filename(), slug));
+                    } catch (Exception ignore) {
+                    }
                 } catch (Exception ex) {
                     failed.add(slug);
                 }
@@ -1694,6 +1715,69 @@ public class MainApp extends Application {
         } catch (Exception ex) {
             alert(Alert.AlertType.ERROR, "OptiFine setup failed", String.valueOf(ex.getMessage()));
         }
+    }
+
+    private static ModrinthClient.ModFile primaryFile(ModrinthClient.ModVersion v) {
+        if (v == null || v.files().isEmpty()) return null;
+        return v.files().stream().filter(ModrinthClient.ModFile::primary).findFirst().orElse(v.files().get(0));
+    }
+
+    /** Re-install every tracked item to its newest compatible version (replacing the old file). */
+    private void updateAllMods(Instance inst) {
+        Thread t = new Thread(() -> {
+            try {
+                Path instDir = instanceManager.instanceDir(inst);
+                ModTracker tr = new ModTracker(instDir);
+                var entries = tr.list();
+                if (entries.isEmpty()) {
+                    Platform.runLater(() -> alert(Alert.AlertType.INFORMATION, "No tracked mods",
+                            "Nothing tracked yet. Content installed from Browse is tracked going forward — "
+                            + "mods added before tracking existed won't update here."));
+                    return;
+                }
+                int updated = 0, checked = 0;
+                java.util.List<String> issues = new java.util.ArrayList<>();
+                for (ModTracker.Entry e : entries) {
+                    try {
+                        ContentSource src = "curseforge".equals(e.source())
+                                ? new CurseForgeClient(config != null ? config.curseforgeApiKey() : "")
+                                : new ModrinthClient();
+                        String loader = ("mod".equals(e.type()) || "modpack".equals(e.type())) ? "fabric" : null;
+                        ModrinthClient.ModFile pf = primaryFile(srcLatest(src, e.projectId(), inst.version(), loader));
+                        if (pf == null) { issues.add(e.name() + " (no compatible build)"); continue; }
+                        checked++;
+                        if (!pf.filename().equals(e.filename())) {
+                            Path dir = instDir.resolve(e.folder());
+                            Files.deleteIfExists(dir.resolve(e.filename()));
+                            Files.deleteIfExists(dir.resolve(e.filename() + ".disabled"));
+                            ModInstaller.install(src, e.projectId(), inst.version(), loader, dir, m -> {});
+                            tr.record(new ModTracker.Entry(e.projectId(), e.source(), e.type(), e.folder(),
+                                    pf.filename(), e.name()));
+                            updated++;
+                        }
+                    } catch (Exception ex) {
+                        issues.add(e.name());
+                    }
+                }
+                int up = updated, ch = checked;
+                Platform.runLater(() -> {
+                    showInstanceDetail(currentInstance(inst));
+                    alert(Alert.AlertType.INFORMATION, "Update complete",
+                            "Checked " + ch + " tracked item(s); updated " + up + "."
+                            + (issues.isEmpty() ? "" : "\nSkipped: " + String.join(", ", issues)));
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Update failed", String.valueOf(ex.getMessage())));
+            }
+        }, "update-mods");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static ModrinthClient.ModVersion srcLatest(ContentSource src, String projectId, String gv, String loader)
+            throws Exception {
+        var vers = src.versions(projectId, gv, loader);
+        return vers.isEmpty() ? null : vers.get(0);
     }
 
     private static String formatDownloads(int n) {
