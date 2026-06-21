@@ -9,6 +9,8 @@ import com.kano.launcher.core.GameLauncher;
 import com.kano.launcher.core.InstanceManager;
 import com.kano.launcher.core.JreProvider;
 import com.kano.launcher.core.Loader;
+import com.kano.launcher.core.ModInstaller;
+import com.kano.launcher.core.ModrinthClient;
 import com.kano.launcher.core.Stats;
 import com.kano.launcher.core.VersionDetail;
 import com.kano.launcher.core.VersionManifest;
@@ -46,6 +48,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.util.StringConverter;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -594,8 +597,138 @@ public class MainApp extends Application {
     // ---- other views ----
 
     private void showLibrary() { selectNav(navByName.get("Library")); simplePage("Library", "Your installed content will live here."); }
-    private void showBrowse() { selectNav(navByName.get("Browse Modpacks")); simplePage("Browse Modpacks", "Modrinth browsing comes with the content integration."); }
     private void showSkins() { selectNav(navByName.get("Skins")); simplePage("Skins", "Skin changer is a later milestone (needs app approval)."); }
+
+    // ---- Browse Mods (Modrinth) ----
+
+    private void showBrowse() {
+        selectNav(navByName.get("Browse Modpacks"));
+        VBox page = new VBox(14);
+        page.getStyleClass().add("content");
+        Label title = new Label("Browse Mods");
+        title.getStyleClass().add("page-title");
+
+        var fabricInsts = instanceManager == null ? List.<Instance>of()
+                : instanceManager.list().stream().filter(i -> i.loader() == Loader.FABRIC).toList();
+        if (fabricInsts.isEmpty()) {
+            Label none = new Label("Create a Fabric instance first — mods install into a Fabric instance.");
+            none.getStyleClass().add("muted");
+            page.getChildren().addAll(title, none);
+            content.getChildren().setAll(page);
+            return;
+        }
+
+        ChoiceBox<Instance> instPick = new ChoiceBox<>();
+        instPick.getItems().addAll(fabricInsts);
+        instPick.setConverter(new StringConverter<>() {
+            public String toString(Instance i) { return i == null ? "" : i.name() + " (" + i.version() + ")"; }
+            public Instance fromString(String s) { return null; }
+        });
+        instPick.getSelectionModel().selectFirst();
+
+        TextField q = new TextField();
+        q.setPromptText("Search mods — sodium, jei, sodium…");
+        HBox.setHgrow(q, Priority.ALWAYS);
+        Button searchBtn = new Button("Search");
+        searchBtn.getStyleClass().add("btn-filled");
+
+        VBox results = new VBox(10);
+        ScrollPane scroll = new ScrollPane(results);
+        scroll.setFitToWidth(true);
+        scroll.getStyleClass().add("scroll-pane");
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+
+        Runnable doSearch = () -> runModSearch(instPick.getValue(), q.getText(), results);
+        searchBtn.setOnAction(e -> doSearch.run());
+        q.setOnAction(e -> doSearch.run());
+
+        HBox bar = new HBox(10, instPick, q, searchBtn);
+        bar.setAlignment(Pos.CENTER_LEFT);
+        page.getChildren().addAll(title, bar, scroll);
+        content.getChildren().setAll(page);
+    }
+
+    private void runModSearch(Instance inst, String query, VBox results) {
+        Label loading = new Label("Searching…");
+        loading.getStyleClass().add("muted");
+        results.getChildren().setAll(loading);
+        Thread t = new Thread(() -> {
+            try {
+                var hits = new ModrinthClient().search(query, inst.version(), "fabric", "mod");
+                Platform.runLater(() -> {
+                    results.getChildren().clear();
+                    if (hits.isEmpty()) {
+                        Label none = new Label("No compatible mods found.");
+                        none.getStyleClass().add("muted");
+                        results.getChildren().add(none);
+                    } else {
+                        for (var h : hits) results.getChildren().add(modCard(h, inst));
+                    }
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    Label err = new Label("Search failed: " + ex.getMessage());
+                    err.getStyleClass().add("muted");
+                    results.getChildren().setAll(err);
+                });
+            }
+        }, "mod-search");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private Region modCard(ModrinthClient.Hit hit, Instance inst) {
+        Label name = new Label(hit.title());
+        name.getStyleClass().add("card-title-sm");
+        Label desc = new Label(hit.description());
+        desc.getStyleClass().add("card-sub");
+        desc.setWrapText(true);
+        Label dl = new Label(formatDownloads(hit.downloads()) + " downloads");
+        dl.getStyleClass().add("card-meta");
+        VBox info = new VBox(4, name, desc, dl);
+        HBox.setHgrow(info, Priority.ALWAYS);
+
+        Button install = new Button("Install");
+        install.getStyleClass().add("btn-outline");
+        install.setOnAction(e -> installMod(hit, inst, install));
+
+        HBox row = new HBox(14, info, install);
+        row.setAlignment(Pos.CENTER_LEFT);
+        StackPane card = new StackPane(row);
+        card.getStyleClass().add("card");
+        return card;
+    }
+
+    private void installMod(ModrinthClient.Hit hit, Instance inst, Button install) {
+        install.setDisable(true);
+        install.setText("Installing…");
+        Thread t = new Thread(() -> {
+            try {
+                Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
+                int n = ModInstaller.install(new ModrinthClient(), hit.projectId(), inst.version(),
+                        "fabric", modsDir, msg -> {});
+                Platform.runLater(() -> {
+                    install.setText("Installed ✓");
+                    alert(Alert.AlertType.INFORMATION, "Installed",
+                            hit.title() + " → " + inst.name() + "\n" + n + " file(s) added (incl. dependencies).");
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    install.setDisable(false);
+                    install.setText("Install");
+                    alert(Alert.AlertType.ERROR, "Install failed", String.valueOf(ex.getMessage()));
+                });
+            }
+        }, "mod-install");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static String formatDownloads(int n) {
+        if (n >= 1_000_000) return String.format("%.1fM", n / 1_000_000.0);
+        if (n >= 1_000) return String.format("%.0fK", n / 1_000.0);
+        return String.valueOf(n);
+    }
 
     private void showSettings() {
         selectNav(navByName.get("Settings"));
