@@ -225,4 +225,55 @@ Bespoke cross-loader overlay mod · "JVM warmup" · Chunky "pre-launch" pre-gene
 
 ---
 
+## 10. Expanded Feature Backlog (post-v1)
+
+Captured from later design passes. Difficulty: 🟢 straightforward · 🟡 moderate · 🔴 hard / needs research. These come **after** the v1 vertical slice and the approval gate; ordering within is rough priority.
+
+### Performance (a core goal, not an afterthought)
+The launcher should make Minecraft run as fast as possible out of the box — higher FPS, lower memory pressure.
+- 🟢 **Curated Performance Pack** (Fabric): Sodium, Lithium, Ferrite Core / ModernFix, Entity Culling, etc. One toggle per instance (already in §4.3). Default-on for new Fabric instances.
+- 🟢 **Smart JVM tuning**: G1 + Aikar flags, heap sized to hardware + mod profile (§4.6).
+- 🟡 **AppCDS archive per JRE** for faster startup (§4.6).
+- 🟡 **Per-instance OptiFine toggle** — see dedicated note below.
+
+### OptiFine toggle (per instance)
+- 🟡/🔴 Each instance gets an "Enable OptiFine" toggle that installs + wires OptiFine correctly for that version/loader.
+- **Honest caveats (must surface in the UI):**
+  - OptiFine on **Fabric** requires **OptiFabric**, and it **conflicts with Sodium** (the Performance Pack) — can't run both. The toggle must auto-disable the conflicting performance mods and warn.
+  - OptiFine often **lags new MC versions** by weeks/months; for the latest versions it may not exist yet.
+  - For most users **Sodium + Iris** (shaders) beats OptiFine on performance — recommend it in the toggle's help text, but honor the user's choice.
+  - Headless OptiFine install needs running its installer jar; budget real work (similar to Forge automation).
+
+### Smart mod browsing & management
+- 🟢 **Exact-compatibility browsing**: only show mods / resource packs / shaders compatible with the instance's exact version **and** loader. Incompatible content doesn't appear (filter by declared compatibility — see §4.3 honesty note).
+- 🟢 **One-click dependency resolution**: required libs/APIs/sub-deps added automatically in the background (Modrinth-only for clean graphs in v1 — §4.3/§4.4).
+- 🟡 **Conflict detection + suggestions**: warn when Mod A breaks Mod B; suggest alternatives/reordering (scope to what metadata supports — declared incompatibilities, dup mod-ids; "suggest alternatives" is best-effort).
+- 🟡 **Bulk operations**: update all mods in one click; export an instance as a modpack with **version-lock** files; **clone instance keeping only the mod list** (not worlds).
+- 🟢 **Drag-and-drop offline content**: drop any jar/pack into the instance folder and it appears as a selectable mod/resource pack — no manual file management (§4.3 local-resources).
+
+### Accounts
+- 🟡 **Multi-account elegance**: multiple Microsoft accounts, avatars in the top bar, one-click switch, silent token refresh behind the scenes (never re-login unless required). (Builds on the deferred multi-account work + skin/avatar rendering.)
+
+### Worlds & servers
+- 🟡 **World management**: list all single-player worlds in the launcher — last played, size, seed, **backup/restore**, and **quick-launch directly into a world** (`--quickPlaySingleplayer`).
+- 🟡 **Server sidebar**: favorite servers under your instances — online status, player count, ping; double-click to join (`--quickPlayMultiplayer`). (Ping/status via standard server list ping protocol.)
+- 🔴 **Shareable modpack links**: generate a one-click private install link for friends (needs a tiny hosting/redirect component even if the launcher stays personal).
+
+### Power-user UX
+- 🟡 **Command palette (Ctrl+K)**: universal smart search — type "launch SMP world", "update all mods", "upload new skin" and it runs.
+- 🟡 **Customizable layout**: rearrange panels, per-list **grid/list toggle** (instances, mods), resizable sidebar. Persist layout to config.
+- 🟡 **Instance groups**: tag instances ("Performance Testing", "Multiplayer", "Creative") and do bulk ops (update all, allocate RAM to a whole group).
+- 🟡 **Scheduled tasks**: auto-update mods on a schedule (e.g. Friday night), pre-warm a favorite instance each morning. (OS scheduler or an in-app timer; launcher must be running for in-app.)
+- 🟢 **Stats bar (bottom of launcher)**: track + display total hours played and worlds created.
+- 🟡 **Privacy mode hotkey**: instantly minimize all game windows + mute game audio, restoring a neutral desktop.
+
+### Hard / research-flagged (high payoff, real complexity)
+- 🔴 **Instance-aware mod profiles (per-world / per-server)**: within one instance, define "mod sets" that auto-activate based on the world loaded or server joined (e.g. full questing pack solo, lean perf/QoL set on a server) — no duplicate instances. **Why it's hard:** requires per-launch mod-folder swapping or a custom loader injector; activating "on server connect" mid-session is the genuinely hard part (likely simplified to *choose a profile at launch* for v1 of this feature).
+- 🔴 **Live instance dashboard**: real-time FPS / memory / GC pause / network graphs while the game runs. **Why it's hard:** the launcher can't see inside the game process — needs a small companion mod (per loader/version) feeding telemetry back over a local socket. This is the same per-loader/per-version maintenance treadmill flagged for the in-game overlay (§4.10); reuse one telemetry mod rather than building bespoke per version.
+
+### Sequencing note
+Most of the 🔴 items (per-world profiles, live dashboard, shareable links) depend on infrastructure that doesn't exist until the core loop + mod management are solid. Build the 🟢/🟡 wins first; treat 🔴 as their own researched milestones so they don't stall the launcher.
+
+---
+
 *End of KanoLauncher build plan v2.*
