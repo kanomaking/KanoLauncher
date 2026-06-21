@@ -598,8 +598,94 @@ public class MainApp extends Application {
 
     // ---- other views ----
 
-    private void showLibrary() { selectNav(navByName.get("Library")); simplePage("Library", "Your installed content will live here."); }
     private void showSkins() { selectNav(navByName.get("Skins")); simplePage("Skins", "Skin changer is a later milestone (needs app approval)."); }
+
+    // ---- Library: installed mods per instance ----
+
+    private void showLibrary() {
+        selectNav(navByName.get("Library"));
+        VBox page = new VBox(14);
+        page.getStyleClass().add("content");
+        Label title = new Label("Library — Installed Mods");
+        title.getStyleClass().add("page-title");
+
+        var insts = instanceManager == null ? List.<Instance>of() : instanceManager.list();
+        if (insts.isEmpty()) {
+            Label none = new Label("No instances yet.");
+            none.getStyleClass().add("muted");
+            page.getChildren().addAll(title, none);
+            content.getChildren().setAll(page);
+            return;
+        }
+
+        ChoiceBox<Instance> pick = new ChoiceBox<>();
+        pick.getItems().addAll(insts);
+        pick.setConverter(new StringConverter<>() {
+            public String toString(Instance i) { return i == null ? "" : i.name() + " (" + i.version() + ")"; }
+            public Instance fromString(String s) { return null; }
+        });
+        pick.getSelectionModel().selectFirst();
+
+        VBox list = new VBox(8);
+        ScrollPane scroll = new ScrollPane(list);
+        scroll.setFitToWidth(true);
+        scroll.getStyleClass().add("scroll-pane");
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+
+        pick.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> populateInstalledMods(b, list));
+        page.getChildren().addAll(title, pick, scroll);
+        content.getChildren().setAll(page);
+        populateInstalledMods(pick.getValue(), list);
+    }
+
+    private void populateInstalledMods(Instance inst, VBox list) {
+        list.getChildren().clear();
+        if (inst == null) return;
+        Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
+        List<Path> jars = new ArrayList<>();
+        if (Files.isDirectory(modsDir)) {
+            try (var s = Files.list(modsDir)) {
+                s.filter(pth -> pth.toString().toLowerCase().endsWith(".jar")).sorted().forEach(jars::add);
+            } catch (Exception ignored) {
+            }
+        }
+        if (jars.isEmpty()) {
+            Label none = new Label("No mods installed in this instance. Add some from Browse Mods.");
+            none.getStyleClass().add("muted");
+            list.getChildren().add(none);
+            return;
+        }
+        for (Path jar : jars) {
+            Label name = new Label(jar.getFileName().toString());
+            name.getStyleClass().add("card-title-sm");
+            Label size = new Label(fileSize(jar));
+            size.getStyleClass().add("card-sub");
+            VBox info = new VBox(2, name, size);
+            HBox.setHgrow(info, Priority.ALWAYS);
+            Button remove = new Button("Remove");
+            remove.getStyleClass().add("btn-outline");
+            remove.setOnAction(e -> {
+                try { Files.deleteIfExists(jar); populateInstalledMods(inst, list); }
+                catch (Exception ex) { alert(Alert.AlertType.ERROR, "Remove failed", ex.getMessage()); }
+            });
+            HBox row = new HBox(12, info, remove);
+            row.setAlignment(Pos.CENTER_LEFT);
+            StackPane card = new StackPane(row);
+            card.getStyleClass().add("card");
+            list.getChildren().add(card);
+        }
+    }
+
+    private static String fileSize(Path p) {
+        try {
+            long b = Files.size(p);
+            if (b >= 1_048_576) return String.format("%.1f MB", b / 1_048_576.0);
+            if (b >= 1024) return String.format("%.0f KB", b / 1024.0);
+            return b + " B";
+        } catch (Exception e) {
+            return "";
+        }
+    }
 
     // ---- Browse Mods (Modrinth) ----
 
