@@ -29,12 +29,21 @@ public final class GameLauncher {
 
     public static Process launch(Instance inst, VersionDetail vd, Path javaExe, Path dataDir,
                                  String playerName, FabricSupport.Profile fabric) throws Exception {
-        return launch(inst, vd, javaExe, dataDir, playerName, fabric, null);
+        return launch(inst, vd, javaExe, dataDir, playerName, fabric, null, null);
     }
 
-    /** @param quickWorld if non-null, boots straight into that single-player world folder. */
     public static Process launch(Instance inst, VersionDetail vd, Path javaExe, Path dataDir,
                                  String playerName, FabricSupport.Profile fabric, String quickWorld) throws Exception {
+        return launch(inst, vd, javaExe, dataDir, playerName, fabric, null, quickWorld);
+    }
+
+    /**
+     * @param forge      NeoForge/Forge launch profile, or null for vanilla/Fabric
+     * @param quickWorld if non-null, boots straight into that single-player world folder.
+     */
+    public static Process launch(Instance inst, VersionDetail vd, Path javaExe, Path dataDir,
+                                 String playerName, FabricSupport.Profile fabric,
+                                 ForgeSupport.Profile forge, String quickWorld) throws Exception {
         Path libsDir = GameInstaller.librariesDir(dataDir);
         Path assets = GameInstaller.assetsDir(dataDir);
         Path clientJar = GameInstaller.clientJar(dataDir, vd.id());
@@ -48,6 +57,7 @@ public final class GameLauncher {
         List<String> cp = new ArrayList<>();
         for (VersionDetail.Dl lib : vd.libraries()) cp.add(libsDir.resolve(lib.path()).toString());
         if (fabric != null) for (VersionDetail.Dl lib : fabric.libraries()) cp.add(libsDir.resolve(lib.path()).toString());
+        if (forge != null) for (VersionDetail.Dl lib : forge.libraries()) cp.add(libsDir.resolve(lib.path()).toString());
         cp.add(clientJar.toString());
         String classpath = String.join(File.pathSeparator, cp);
 
@@ -74,6 +84,8 @@ public final class GameLauncher {
         subs.put("launcher_name", "KanoLauncher");
         subs.put("launcher_version", "1.0");
         subs.put("classpath", classpath);
+        subs.put("library_directory", libsDir.toString());      // Forge/NeoForge module-path tokens
+        subs.put("classpath_separator", File.pathSeparator);
 
         List<String> jvmArgs = new ArrayList<>();
         List<String> gameArgs = new ArrayList<>();
@@ -95,6 +107,10 @@ public final class GameLauncher {
             for (String a : fabric.jvmArgs()) jvmArgs.add(sub(a, subs));
             for (String a : fabric.gameArgs()) gameArgs.add(sub(a, subs));
         }
+        if (forge != null) {
+            for (String a : forge.jvmArgs()) jvmArgs.add(sub(a, subs));
+            for (String a : forge.gameArgs()) gameArgs.add(sub(a, subs));
+        }
 
         // Per-instance extras.
         if (inst.jvmArgs() != null && !inst.jvmArgs().isBlank()) {
@@ -110,7 +126,8 @@ public final class GameLauncher {
             gameArgs.add(quickWorld);
         }
 
-        String mainClass = fabric != null ? fabric.mainClass() : vd.mainClass();
+        String mainClass = forge != null ? forge.mainClass()
+                : (fabric != null ? fabric.mainClass() : vd.mainClass());
 
         List<String> command = new ArrayList<>();
         command.add(javaExe.toString());

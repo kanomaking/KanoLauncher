@@ -563,10 +563,9 @@ public class MainApp extends Application {
         Button create = new Button("Create Instance");
         create.getStyleClass().add("btn-outline");
         create.setOnAction(e -> showCreateDialog());
-        Button importBtn = new Button("Import");
+        Button importBtn = new Button("Import .mrpack");
         importBtn.getStyleClass().add("btn-filled");
-        importBtn.setOnAction(e -> alert(Alert.AlertType.INFORMATION, "Import",
-                "Import (.mrpack) comes with the Modrinth integration."));
+        importBtn.setOnAction(e -> importMrpackFile());
         HBox header = new HBox(14, title, grow, create, importBtn);
         header.setAlignment(Pos.CENTER_LEFT);
 
@@ -1095,11 +1094,19 @@ public class MainApp extends Application {
                 // 2. Make sure the right Java is available (downloads from Adoptium if needed).
                 Path javaExe = JreProvider.javaExecutable(dataDir, vd.javaMajor(), msg -> {});
 
+                // 2b. NeoForge/Forge: install (download installer + run client processors) + resolve profile.
+                com.kano.launcher.core.ForgeSupport.Profile forge = null;
+                if (inst.loader() == Loader.NEOFORGE || inst.loader() == Loader.FORGE) {
+                    Path vanillaClient = GameInstaller.clientJar(dataDir, vd.id());
+                    forge = com.kano.launcher.core.ForgeSupport.resolve(
+                            dataDir, inst.version(), inst.loader(), javaExe, vanillaClient, msg -> {});
+                }
+
                 // 3. Launch (offline mode — works before app approval).
                 var activeAcc = activeAccount();
                 String player = activeAcc != null ? activeAcc.username() : "Player";
                 long sessionStart = System.currentTimeMillis();
-                Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric, quickWorld);
+                Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric, forge, quickWorld);
                 Platform.runLater(() -> play.getStyleClass().remove("loading"));
 
                 // Mark last-played and refresh the view.
@@ -1185,7 +1192,7 @@ public class MainApp extends Application {
         fillVersions.run();
 
         ChoiceBox<Loader> loader = new ChoiceBox<>();
-        loader.getItems().addAll(Loader.VANILLA, Loader.FABRIC);
+        loader.getItems().addAll(Loader.VANILLA, Loader.FABRIC, Loader.NEOFORGE, Loader.FORGE);
         loader.getSelectionModel().selectFirst();
 
         TextField group = new TextField();
@@ -1882,14 +1889,14 @@ public class MainApp extends Application {
             String name = idx.name() != null && !idx.name().isBlank() ? idx.name() : fallbackName;
             Instance inst = instanceManager.create(name, idx.mcVersion(), idx.loader());
             int n = ModpackInstaller.installInto(mrpack, idx, instanceManager.instanceDir(inst), msg -> {});
-            boolean bootable = idx.loader() == Loader.VANILLA || idx.loader() == Loader.FABRIC;
+            boolean forgey = idx.loader() == Loader.FORGE || idx.loader() == Loader.NEOFORGE;
             Platform.runLater(() -> {
                 if (onReset != null) onReset.run();
                 showInstances();
-                String warn = bootable ? "" :
-                        "\n\nNote: this pack needs " + idx.loader().display()
-                        + ", which isn't bootable yet — the files are installed, but it won't launch until "
-                        + idx.loader().display() + " support lands.";
+                String warn = forgey
+                        ? "\n\nNote: " + idx.loader().display() + " runs its installer on first Play (downloads + "
+                        + "patches the client) — the first launch takes longer, and this loader path is new."
+                        : "";
                 alert(Alert.AlertType.INFORMATION, "Modpack imported",
                         name + " → new " + idx.loader().display() + " " + idx.mcVersion() + " instance.\n"
                         + n + " file(s) installed (mods + overrides)." + warn);

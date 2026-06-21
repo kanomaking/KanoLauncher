@@ -143,7 +143,7 @@ Modrinth covers almost everything you want. CurseForge is added **later**, just 
 
 - **v1: Vanilla + Fabric.** Fabric automates cleanly (official installer/CLI + Fabric Meta). Quilt runs the Fabric overlay jar anyway — low priority.
 - **Later, add NeoForge as first-class.** NeoForge is the de-facto standard for MC 1.21+ (most popular Forge-family mods are NeoForge-first; NeoForge and Forge mods are mutually incompatible on 1.21+). Listing "Forge" but not "NeoForge" would miss most current content.
-- **Forge/NeoForge install is real work:** there's no official headless *client* installer (the client path opens a Swing GUI and throws `HeadlessException`; only `--installServer` is headless). Replicate mature launchers: run the installer's processors, then parse the produced version JSON. Budget real time.
+- **Forge/NeoForge install is real work:** there's no official headless *client* installer (the client path opens a Swing GUI and throws `HeadlessException`; only `--installServer` is headless). Replicate mature launchers: run the installer's processors, then parse the produced version JSON. ✅ **Done** — `ForgeSupport`/`ForgeVersions` do exactly this (see §11). Install engine verified end-to-end; in-game boot still needs real-world testing.
 - **Quilt:** keep cheap install support if you want, but don't build a dedicated Quilt overlay (it dropped Fabric-API-compat maintenance Dec 2025; Fabric jars run on it). Spend that effort on NeoForge.
 
 ---
@@ -287,7 +287,9 @@ Most of the 🔴 items (per-world profiles, live dashboard, shareable links) dep
 
 The launcher is a working JavaFX app (`gradlew run`). Implemented and verified:
 
-**Core loop:** create instance → download (client/libs/natives/assets, content-addressed, SHA-1 verified, parallel) → auto-fetch the right Java (Adoptium) → launch (offline mode). Vanilla + Fabric boot. Forge/NeoForge drafted (not yet wired — see below).
+**Core loop:** create instance → download (client/libs/natives/assets, content-addressed, SHA-1 verified, parallel) → auto-fetch the right Java (Adoptium) → launch (offline mode). Vanilla + Fabric boot.
+
+**NeoForge / Forge (✅ install engine shipped; boot needs real-world testing):** `core/ForgeVersions.java` resolves the newest NeoForge/Forge build for an MC version off each project's Maven metadata (verified live: 1.21.1 → neoforge 21.1.234 / forge 1.21.1-52.1.14; correctly returns no NeoForge for 1.20.1). `core/ForgeSupport.java` drives the modern (MC 1.13+) installer format both projects share: downloads the installer jar, extracts `install_profile.json` + `version.json`, copies bundled `maven/` artifacts, downloads all profile + launch libraries, builds the `data` token map (`[maven]`/`'literal'`/`/extracted` + built-ins `{MINECRAFT_JAR}` `{SIDE}` `{LIBRARY_DIR}` `{ROOT}` `{INSTALLER}`), then runs each **client-side** processor as a subprocess (binpatcher / jarsplitter / ART renamer / installertools — server-only processors skipped) to patch the vanilla jar into the modded client. Cached behind a per-loader+version marker so it runs once. Parses `version.json` into a `Profile` (mainClass, libraries, jvm/game args) fed into `GameLauncher`, which now adds the Forge libs to the classpath, sets the module-path tokens (`${library_directory}`, `${classpath_separator}`), and appends Forge's jvm/game args + main class (`cpw.mods.bootstraplauncher.BootstrapLauncher`). Wired into `onPlay` (runs after Java is fetched, before launch) and the create dialog (NeoForge + Forge selectable). **Headless-verified end-to-end for NeoForge 1.21.1: all 10 processors ran, 47/47 libraries materialized on disk, correct main class — in 26s.** The only unverified step is the actual in-game boot (needs a display + full assets); first Play also takes longer (installer + processors run then).
 
 **Accounts/auth:** full MS device-code chain (MSA→XBL→XSTS→Minecraft), AES-256-GCM token store, multi-account avatar bar with active-account switching. Online play gated on Microsoft app approval (form submitted; `login_with_xbox` 403 until approved).
 
@@ -303,7 +305,7 @@ The launcher is a working JavaFX app (`gradlew run`). Implemented and verified:
 
 **Other:** self-update banner (GitHub release check, notify-only).
 
-**Drafted, NOT yet integrated** (agent-produced, pending): NeoForge/Forge loader (installer-processor + patched-client-jar wiring is the remaining hard part), scheduled tasks, instance groups, live dashboard, packaging (.msi/.deb via jpackage — needs WiX + jmods + icons).
+**Drafted, NOT yet integrated** (agent-produced, pending): scheduled tasks, live dashboard, packaging (.msi/.deb via jpackage — needs WiX + jmods + icons).
 
 **Still wanted:** per-letter colored/bold launcher name (hex codes); deeper per-component customization options.
 
