@@ -21,9 +21,14 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.DialogPane;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
+import javafx.scene.Node;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.shape.Rectangle;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
@@ -74,11 +79,16 @@ public class MainApp extends Application {
         this.stage = stage;
         initData();
 
-        BorderPane panel = new BorderPane();
+        BorderPane inner = new BorderPane();
+        inner.setTop(buildTitleBar());
+        inner.setLeft(buildSidebar());
+        inner.setCenter(content);
+
+        StackPane panel = new StackPane();
         panel.getStyleClass().add("app-panel");
-        panel.setTop(buildTitleBar());
-        panel.setLeft(buildSidebar());
-        panel.setCenter(content);
+        Node bg = buildBackground(panel);
+        if (bg != null) panel.getChildren().add(bg);
+        panel.getChildren().add(inner);
 
         StackPane shell = new StackPane(panel, buildResizeGrip());
         shell.getStyleClass().add("app-shell");
@@ -454,6 +464,7 @@ public class MainApp extends Application {
         box.setPadding(new Insets(12));
         d.getDialogPane().setContent(box);
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        styleDialog(d);
 
         if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
             try {
@@ -476,6 +487,7 @@ public class MainApp extends Application {
         ButtonType deleteBtn = new ButtonType("Delete", javafx.scene.control.ButtonBar.ButtonData.OTHER);
         d.getDialogPane().setContent(box);
         d.getDialogPane().getButtonTypes().addAll(ButtonType.APPLY, deleteBtn, ButtonType.CANCEL);
+        styleDialog(d);
 
         ButtonType result = d.showAndWait().orElse(ButtonType.CANCEL);
         try {
@@ -642,6 +654,38 @@ public class MainApp extends Application {
         return grip;
     }
 
+    /** Dim king-render watermark behind the content. No-op if king-bg.png isn't present in resources. */
+    private Node buildBackground(Region panel) {
+        var url = getClass().getResource("king-bg.png");
+        if (url == null) return null;
+        ImageView iv = new ImageView(new Image(url.toExternalForm()));
+        iv.setPreserveRatio(true);
+        iv.setOpacity(0.12);
+        iv.fitHeightProperty().bind(panel.heightProperty());
+        StackPane holder = new StackPane(iv);
+        StackPane.setAlignment(iv, Pos.CENTER_RIGHT);
+        StackPane.setMargin(iv, new Insets(0, -30, 0, 0));
+        Rectangle clip = new Rectangle();
+        clip.setArcWidth(40);
+        clip.setArcHeight(40);
+        clip.widthProperty().bind(holder.widthProperty());
+        clip.heightProperty().bind(holder.heightProperty());
+        holder.setClip(clip);
+        holder.setMouseTransparent(true);
+        return holder;
+    }
+
+    /** Apply the launcher theme to a dialog/alert so it matches (no white Modena style). */
+    private void styleDialog(Dialog<?> d) {
+        DialogPane dp = d.getDialogPane();
+        var css = getClass().getResource("kano.css");
+        if (css != null && !dp.getStylesheets().contains(css.toExternalForm())) {
+            dp.getStylesheets().add(css.toExternalForm());
+        }
+        if (!dp.getStyleClass().contains("kano-dialog")) dp.getStyleClass().add("kano-dialog");
+        d.initOwner(stage);
+    }
+
     // ---- helpers ----
 
     private void alert(Alert.AlertType type, String title, String body) {
@@ -649,7 +693,7 @@ public class MainApp extends Application {
         a.setTitle(title);
         a.setHeaderText(null);
         a.setContentText(body);
-        a.initOwner(stage);
+        styleDialog(a);
         a.showAndWait();
     }
 

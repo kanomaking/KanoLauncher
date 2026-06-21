@@ -186,3 +186,71 @@
 .resize-grip { -fx-cursor: nw-resize; }
 .scroll-pane, .scroll-pane > .viewport { -fx-background-color: transparent; }
 .scroll-pane > .scroll-bar:vertical { -fx-background-color: transparent; }
+
+/* ---- dialogs (Create / Edit / alerts) — match the launcher ---- */
+.kano-dialog {
+    -fx-background-color: linear-gradient(to bottom right, #0d0e13, #07080b);
+    -fx-border-color: rgba(211,47,47,0.85);
+    -fx-border-width: 1.4;
+}
+.kano-dialog > .header-panel {
+    -fx-background-color: #120708;
+}
+.kano-dialog > .header-panel .label {
+    -fx-text-fill: #FFFFFF;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+.kano-dialog .label { -fx-text-fill: #C0C0C0; }
+.kano-dialog .content.label { -fx-text-fill: #C0C0C0; }
+
+.kano-dialog .button {
+    -fx-background-color: #14151b;
+    -fx-text-fill: #E53935;
+    -fx-border-color: #D32F2F;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 6 18 6 18;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+}
+.kano-dialog .button:hover { -fx-background-color: #1a0708; }
+.kano-dialog .button:default {
+    -fx-background-color: #D32F2F;
+    -fx-text-fill: #FFFFFF;
+}
+.kano-dialog .button:default:hover { -fx-background-color: #E53935; }
+
+.kano-dialog .text-field {
+    -fx-background-color: #14151b;
+    -fx-text-fill: #FFFFFF;
+    -fx-prompt-text-fill: #7d7d7d;
+    -fx-background-radius: 6;
+    -fx-border-color: rgba(211,47,47,0.5);
+    -fx-border-radius: 6;
+}
+.kano-dialog .choice-box {
+    -fx-background-color: #14151b;
+    -fx-border-color: rgba(211,47,47,0.5);
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+}
+.kano-dialog .choice-box .label { -fx-text-fill: #FFFFFF; }
+.kano-dialog .choice-box > .open-button > .arrow { -fx-background-color: #C0C0C0; }
+.kano-dialog .check-box .text { -fx-text-fill: #C0C0C0; }
+.kano-dialog .check-box > .box {
+    -fx-background-color: #14151b;
+    -fx-border-color: rgba(211,47,47,0.5);
+    -fx-background-radius: 4;
+}
+.kano-dialog .check-box:selected > .box > .mark { -fx-background-color: #E53935; }
+
+/* dropdown popups (choice boxes) — dark */
+.context-menu {
+    -fx-background-color: #14151b;
+    -fx-border-color: rgba(211,47,47,0.5);
+    -fx-background-radius: 6;
+}
+.context-menu .menu-item .label { -fx-text-fill: #C0C0C0; }
+.context-menu .menu-item:focused { -fx-background-color: #B71C1C; }
+.context-menu .menu-item:focused .label { -fx-text-fill: #FFFFFF; }
