@@ -224,9 +224,19 @@ public class MainApp extends Application {
         scene.getAccelerators().put(
                 new KeyCodeCombination(KeyCode.R, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
                 this::recenterWindow);
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.Q, KeyCombination.CONTROL_DOWN), this::closeApp);
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.W, KeyCombination.CONTROL_DOWN), this::closeApp);
 
         applyTheme();
         checkForUpdate();
+    }
+
+    /** Close the launcher and guarantee the JVM exits (a packaged app can otherwise hang on a stray thread). */
+    private void closeApp() {
+        try { Platform.exit(); } catch (Exception ignored) { }
+        System.exit(0);
     }
 
     /** Pull the window fully back into the work area of the screen it's actually on (top edge especially). */
@@ -476,7 +486,7 @@ public class MainApp extends Application {
         Button max = winButton("❐", false);
         max.setOnAction(e -> toggleMaximize());
         Button close = winButton("✕", true);
-        close.setOnAction(e -> Platform.exit());
+        close.setOnAction(e -> closeApp());
 
         HBox bar = new HBox(10, k, title, grow, avatarBar, accountChip, min, max, close);
         bar.getStyleClass().add("title-bar");
