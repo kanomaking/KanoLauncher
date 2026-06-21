@@ -204,12 +204,47 @@ public class MainApp extends Application {
         stage.setMinHeight(Math.min(600, vb.getHeight() - 40));
         stage.setWidth(winW);
         stage.setHeight(winH);
-        stage.setX(vb.getMinX() + (vb.getWidth() - winW) / 2);
-        stage.setY(vb.getMinY() + (vb.getHeight() - winH) / 2);
+        // Anchor the window NEAR THE TOP (not vertically centered) so the custom title bar — and its
+        // min/max/close buttons — is always a fixed distance below the screen's top edge, never above it.
+        stage.setX(vb.getMinX() + Math.max(0, (vb.getWidth() - winW) / 2));
+        stage.setY(vb.getMinY() + 28);
         stage.show();
+        // After show, undecorated stages can be nudged off-screen by the platform — clamp back in.
+        Platform.runLater(this::clampOnScreen);
+
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.R, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
+                this::recenterWindow);
 
         applyTheme();
         checkForUpdate();
+    }
+
+    /** Pull the window fully back into the screen's work area (top edge especially). */
+    private void clampOnScreen() {
+        if (stage == null) return;
+        Rectangle2D vb = Screen.getPrimary().getVisualBounds();
+        if (stage.getWidth() > vb.getWidth()) stage.setWidth(vb.getWidth() - 40);
+        if (stage.getHeight() > vb.getHeight()) stage.setHeight(vb.getHeight() - 40);
+        if (stage.getY() < vb.getMinY() + 4) stage.setY(vb.getMinY() + 28);
+        if (stage.getX() < vb.getMinX()) stage.setX(vb.getMinX() + 20);
+        double maxX = vb.getMinX() + vb.getWidth() - stage.getWidth();
+        double maxY = vb.getMinY() + vb.getHeight() - stage.getHeight();
+        if (stage.getX() > maxX) stage.setX(Math.max(vb.getMinX(), maxX));
+        if (stage.getY() > maxY) stage.setY(Math.max(vb.getMinY() + 28, maxY));
+    }
+
+    /** Re-fit + re-center the window (Ctrl+Shift+R) — a manual rescue if it ever ends up off-screen. */
+    private void recenterWindow() {
+        if (stage == null) return;
+        if (maximized) { toggleMaximize(); return; }
+        Rectangle2D vb = Screen.getPrimary().getVisualBounds();
+        double w = Math.min(Math.max(960, stage.getWidth()), vb.getWidth() - 40);
+        double h = Math.min(Math.max(600, stage.getHeight()), vb.getHeight() - 40);
+        stage.setWidth(w);
+        stage.setHeight(h);
+        stage.setX(vb.getMinX() + (vb.getWidth() - w) / 2);
+        stage.setY(vb.getMinY() + 28);
     }
 
     private void toggleMaximize() {
@@ -3192,12 +3227,16 @@ public class MainApp extends Application {
 
         Label cfLbl = new Label("CurseForge API key");
         cfLbl.getStyleClass().add("card-title-sm");
-        Label cfHelp = new Label("Lets you browse CurseForge as a second source. Get a free key at "
-                + "console.curseforge.com → API Keys. Stored locally only.");
+        boolean bundledCf = config != null && config.hasBundledCfKey();
+        Label cfHelp = new Label(bundledCf
+                ? "This build ships with a built-in CurseForge key — CurseForge already works. Paste your "
+                  + "own key below only if you want to override it. Stored locally only."
+                : "Lets you browse CurseForge as a second source. Get a free key at "
+                  + "console.curseforge.com → API Keys. Stored locally only.");
         cfHelp.getStyleClass().add("muted");
         cfHelp.setWrapText(true);
-        TextField cfKey = new TextField(config != null ? config.curseforgeApiKey() : "");
-        cfKey.setPromptText("paste your CurseForge API key");
+        TextField cfKey = new TextField(config != null ? config.userCurseforgeApiKey() : "");
+        cfKey.setPromptText(bundledCf ? "using the built-in key — paste to override" : "paste your CurseForge API key");
         cfKey.setPrefWidth(420);
         Button saveCf = new Button("Save Key");
         saveCf.getStyleClass().add("btn-filled");

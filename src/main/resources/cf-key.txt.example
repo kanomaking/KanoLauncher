@@ -1,0 +1,14 @@
+# Bundled CurseForge API key (for personal distribution to friends)
+#
+# To bake your CurseForge key into the app so friends don't each need their own:
+#   1. Copy this file to "cf-key.txt" in the SAME folder (src/main/resources/).
+#   2. Replace the line below with your key from console.curseforge.com -> API Keys.
+#   3. Build the distributable (gradlew run / jpackage) — the key is bundled into the jar.
+#
+# cf-key.txt is gitignored so the real key never lands in source control.
+# The whole file's trimmed contents are used as the key, so put ONLY the key in cf-key.txt
+# (no comments). A per-user key set in Settings always overrides the bundled one.
+#
+# Heads up: a key baked into a downloadable build can be extracted by anyone who has the app.
+# Fine for a handful of trusted friends; don't post the build publicly with your key inside.
+PASTE-YOUR-CURSEFORGE-KEY-HERE

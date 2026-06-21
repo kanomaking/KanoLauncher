@@ -38,8 +38,41 @@ public final class Config {
         load();
     }
 
+    /**
+     * The CurseForge key to use: the per-user key from settings if set, otherwise a key bundled into
+     * the build ({@code /cf-key.txt} on the classpath). Bundling lets you ship the app to friends with
+     * CurseForge working out of the box — drop your key into {@code src/main/resources/cf-key.txt}
+     * before building the distributable (that file is gitignored so it never lands in source control).
+     */
     public String curseforgeApiKey() {
+        if (curseforgeApiKey != null && !curseforgeApiKey.isBlank()) return curseforgeApiKey;
+        return bundledCfKey();
+    }
+
+    /** The user's own key from settings only (blank if they haven't set one) — for the settings field. */
+    public String userCurseforgeApiKey() {
         return curseforgeApiKey == null ? "" : curseforgeApiKey;
+    }
+
+    /** True when a CurseForge key is baked into this build. */
+    public boolean hasBundledCfKey() {
+        return !bundledCfKey().isBlank();
+    }
+
+    private static String cachedBundledKey;
+    private static String bundledCfKey() {
+        if (cachedBundledKey != null) return cachedBundledKey;
+        String key = "";
+        try (var in = Config.class.getResourceAsStream("/cf-key.txt")) {
+            if (in != null) {
+                key = new String(in.readAllBytes(), StandardCharsets.UTF_8)
+                        .replace("﻿", "") // strip a UTF-8 BOM (Notepad adds one)
+                        .trim();
+            }
+        } catch (Exception ignored) {
+        }
+        cachedBundledKey = key;
+        return key;
     }
 
     public void setCurseforgeApiKey(String key) {

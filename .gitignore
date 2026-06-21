@@ -7,6 +7,9 @@ login-test/out/
 # Personal Azure client ID (public identifier, but each user supplies their own)
 login-test/clientid.txt
 
+# Bundled CurseForge API key for personal distribution — never commit the real key
+src/main/resources/cf-key.txt
+
 # IDE / OS
 .idea/
 *.iml
