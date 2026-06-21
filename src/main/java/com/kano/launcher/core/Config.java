@@ -13,6 +13,7 @@ public final class Config {
 
     private final Path file;
     private String curseforgeApiKey = "";
+    private String activeUuid = "";
 
     public Config(Path dataDir) {
         this.file = dataDir.resolve("config.json");
@@ -28,11 +29,22 @@ public final class Config {
         save();
     }
 
+    /** UUID of the account the user picked as active in the avatar bar (empty = none chosen yet). */
+    public String activeUuid() {
+        return activeUuid == null ? "" : activeUuid;
+    }
+
+    public void setActiveUuid(String uuid) {
+        this.activeUuid = uuid == null ? "" : uuid.trim();
+        save();
+    }
+
     private void load() {
         try {
             if (Files.exists(file)) {
                 JsonObject o = new Gson().fromJson(Files.readString(file, StandardCharsets.UTF_8), JsonObject.class);
                 if (o != null && o.has("curseforgeApiKey")) curseforgeApiKey = o.get("curseforgeApiKey").getAsString();
+                if (o != null && o.has("activeUuid")) activeUuid = o.get("activeUuid").getAsString();
             }
         } catch (Exception ignored) {
         }
@@ -42,6 +54,7 @@ public final class Config {
         try {
             JsonObject o = new JsonObject();
             o.addProperty("curseforgeApiKey", curseforgeApiKey);
+            o.addProperty("activeUuid", activeUuid);
             Path tmp = file.resolveSibling("config.json.tmp");
             Files.writeString(tmp, new Gson().toJson(o), StandardCharsets.UTF_8);
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);

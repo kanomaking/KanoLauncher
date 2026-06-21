@@ -15,6 +15,7 @@ import com.kano.launcher.core.Loader;
 import com.kano.launcher.core.ModInstaller;
 import com.kano.launcher.core.ModrinthClient;
 import com.kano.launcher.core.Stats;
+import com.kano.launcher.core.UpdateChecker;
 import com.kano.launcher.core.VersionDetail;
 import com.kano.launcher.core.VersionManifest;
 
@@ -46,6 +47,10 @@ import javafx.scene.image.ImageView;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
@@ -102,11 +107,23 @@ public class MainApp extends Application {
     private Stage stage;
     private double dragX, dragY;
     private Label accountChip;
+    private HBox avatarBar;
     private Stats stats;
     private Label statsLabel;
     private Config config;
     private ContentSource browseSource = new ModrinthClient();
     private ImageView bgView;
+
+    // ---- command palette (Ctrl+K) ----
+    private StackPane paletteOverlay;
+    private TextField paletteField;
+    private VBox paletteResults;
+    private final List<PaletteAction> paletteActions = new ArrayList<>();
+    private final List<PaletteAction> paletteFiltered = new ArrayList<>();
+    private int paletteSelected = 0;
+    private HBox updateBanner;
+    private Label updateBannerText;
+    private String updateUrl = UpdateChecker.releasesPageUrl();
 
     @Override
     public void start(Stage stage) {
@@ -114,9 +131,9 @@ public class MainApp extends Application {
         initData();
 
         BorderPane inner = new BorderPane();
-        inner.setTop(buildTitleBar());
+        inner.setTop(new VBox(buildTitleBar(), buildUpdateBanner()));
         inner.setLeft(buildSidebar());
-        inner.setCenter(content);
+        inner.setCenter(new StackPane(content, buildPalette()));
         inner.setBottom(buildStatsBar());
 
         StackPane panel = new StackPane();
@@ -146,6 +163,9 @@ public class MainApp extends Application {
         var css = getClass().getResource("kano.css");
         if (css != null) scene.getStylesheets().add(css.toExternalForm());
 
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.K, KeyCombination.CONTROL_DOWN), this::openPalette);
+
         stage.initStyle(StageStyle.TRANSPARENT);
         stage.setTitle("KanoLauncher");
         // Window / taskbar icon = the king (prefers a square avatar if present, else the render).
@@ -156,6 +176,55 @@ public class MainApp extends Application {
         stage.setMinWidth(960);
         stage.setMinHeight(600);
         stage.show();
+
+        checkForUpdate();
+    }
+
+    // ---- self-update notification (notify only; see UpdateChecker for the bootstrapper design) ----
+
+    private HBox buildUpdateBanner() {
+        updateBannerText = new Label();
+        updateBannerText.getStyleClass().add("update-banner-text");
+        Region grow = new Region();
+        HBox.setHgrow(grow, Priority.ALWAYS);
+        Button view = new Button("View release");
+        view.getStyleClass().add("btn-filled");
+        view.setOnAction(e -> getHostServices().showDocument(updateUrl));
+        Button dismiss = new Button("✕");
+        dismiss.getStyleClass().add("win-btn");
+        dismiss.setOnAction(e -> hideUpdateBanner());
+        updateBanner = new HBox(10, updateBannerText, grow, view, dismiss);
+        updateBanner.getStyleClass().add("update-banner");
+        updateBanner.setAlignment(Pos.CENTER_LEFT);
+        updateBanner.setVisible(false);
+        updateBanner.setManaged(false);
+        return updateBanner;
+    }
+
+    private void hideUpdateBanner() {
+        if (updateBanner == null) return;
+        updateBanner.setVisible(false);
+        updateBanner.setManaged(false);
+    }
+
+    private void showUpdateBanner(UpdateChecker.Result res) {
+        if (updateBanner == null) return;
+        updateUrl = res.htmlUrl();
+        updateBannerText.setText("Update available: " + res.latestTag() + "  —  you have " + res.currentVersion());
+        updateBanner.setVisible(true);
+        updateBanner.setManaged(true);
+    }
+
+    private void checkForUpdate() {
+        Thread t = new Thread(() -> {
+            try {
+                UpdateChecker.Result res = UpdateChecker.check(VERSION);
+                if (res.newer()) Platform.runLater(() -> showUpdateBanner(res));
+            } catch (Exception ignored) {
+            }
+        }, "update-check");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void initData() {
@@ -193,6 +262,11 @@ public class MainApp extends Application {
         accountChip.getStyleClass().add("account-chip");
         accountChip.setOnMouseClicked(e -> showAccounts());
 
+        avatarBar = new HBox(6);
+        avatarBar.getStyleClass().add("avatar-bar");
+        avatarBar.setAlignment(Pos.CENTER_LEFT);
+        refreshAvatarBar();
+
         Button min = winButton("—", false);
         min.setOnAction(e -> stage.setIconified(true));
         Button max = winButton("❐", false);
@@ -200,7 +274,7 @@ public class MainApp extends Application {
         Button close = winButton("✕", true);
         close.setOnAction(e -> Platform.exit());
 
-        HBox bar = new HBox(10, k, title, grow, accountChip, min, max, close);
+        HBox bar = new HBox(10, k, title, grow, avatarBar, accountChip, min, max, close);
         bar.getStyleClass().add("title-bar");
         bar.setAlignment(Pos.CENTER_LEFT);
 
@@ -219,10 +293,71 @@ public class MainApp extends Application {
     }
 
     private String accountLabel() {
-        if (accountManager != null && !accountManager.list().isEmpty()) {
-            return "● " + accountManager.list().get(0).username();
+        var active = activeAccount();
+        return active != null ? "● " + active.username() : "Sign in";
+    }
+
+    /** Account launch uses: the one matching Config.activeUuid, else the first stored, else null. */
+    private AccountManager.StoredAccount activeAccount() {
+        if (accountManager == null) return null;
+        var accounts = accountManager.list();
+        if (accounts.isEmpty()) return null;
+        String want = config != null ? config.activeUuid() : "";
+        if (want != null && !want.isBlank()) {
+            for (var a : accounts) if (a.uuid().equals(want)) return a;
         }
-        return "Sign in";
+        return accounts.get(0);
+    }
+
+    private void setActiveAccount(String uuid) {
+        if (config != null) config.setActiveUuid(uuid);
+        if (accountChip != null) accountChip.setText(accountLabel());
+        refreshAvatarBar();
+    }
+
+    private static String avatarUrl(String uuid) {
+        return "https://crafatar.com/avatars/" + uuid + "?size=32&overlay";
+    }
+
+    /** Rebuild the title-bar avatar row from saved accounts; highlight the active one. */
+    private void refreshAvatarBar() {
+        if (avatarBar == null) return;
+        avatarBar.getChildren().clear();
+        if (accountManager == null) return;
+        var accounts = accountManager.list();
+        if (accounts.isEmpty()) { avatarBar.setManaged(false); avatarBar.setVisible(false); return; }
+        avatarBar.setManaged(true);
+        avatarBar.setVisible(true);
+        var active = activeAccount();
+        String activeUuid = active != null ? active.uuid() : "";
+        for (var acc : accounts) {
+            avatarBar.getChildren().add(avatarTile(acc, acc.uuid().equals(activeUuid)));
+        }
+    }
+
+    /** A 32px rounded avatar button for one account; click = make active. */
+    private StackPane avatarTile(AccountManager.StoredAccount acc, boolean isActive) {
+        StackPane tile = new StackPane();
+        tile.getStyleClass().add("avatar-btn");
+        if (isActive) tile.getStyleClass().add("avatar-btn-active");
+        tile.setPrefSize(32, 32);
+        tile.setMinSize(32, 32);
+        tile.setMaxSize(32, 32);
+        Label placeholder = new Label(acc.username().isEmpty() ? "?" : acc.username().substring(0, 1).toUpperCase());
+        placeholder.getStyleClass().add("avatar-initial");
+        tile.getChildren().add(placeholder);
+        ImageView iv = new ImageView();
+        iv.setFitWidth(32);
+        iv.setFitHeight(32);
+        Rectangle clip = new Rectangle(32, 32);
+        clip.setArcWidth(10);
+        clip.setArcHeight(10);
+        iv.setClip(clip);
+        tile.getChildren().add(iv);
+        loadIcon(iv, avatarUrl(acc.uuid()));
+        Tooltip.install(tile, new Tooltip(acc.username()));
+        tile.setOnMouseClicked(e -> setActiveAccount(acc.uuid()));
+        return tile;
     }
 
     // ---- sidebar ----
@@ -740,8 +875,8 @@ public class MainApp extends Application {
                 Path javaExe = JreProvider.javaExecutable(dataDir, vd.javaMajor(), msg -> {});
 
                 // 3. Launch (offline mode — works before app approval).
-                String player = (accountManager != null && !accountManager.list().isEmpty())
-                        ? accountManager.list().get(0).username() : "Player";
+                var activeAcc = activeAccount();
+                String player = activeAcc != null ? activeAcc.username() : "Player";
                 long sessionStart = System.currentTimeMillis();
                 Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric, quickWorld);
                 Platform.runLater(() -> play.getStyleClass().remove("loading"));
@@ -1665,7 +1800,7 @@ public class MainApp extends Application {
         t.getStyleClass().add("page-title");
 
         VBox list = new VBox(8);
-        Runnable refresh = () -> { populateAccounts(list); if (accountChip != null) accountChip.setText(accountLabel()); };
+        Runnable refresh = () -> { populateAccounts(list); if (accountChip != null) accountChip.setText(accountLabel()); refreshAvatarBar(); };
         refresh.run();
 
         Button add = new Button("Add Microsoft Account");
@@ -1689,18 +1824,32 @@ public class MainApp extends Application {
             list.getChildren().add(none);
             return;
         }
+        var active = activeAccount();
+        String activeUuid = active != null ? active.uuid() : "";
         for (var acc : accounts) {
+            boolean isActive = acc.uuid().equals(activeUuid);
+            StackPane face = avatarTile(acc, isActive);
             Label name = new Label(acc.username());
             name.getStyleClass().add("card-title-sm");
             Region grow = new Region();
             HBox.setHgrow(grow, Priority.ALWAYS);
+            Button setActive = new Button(isActive ? "Active" : "Set active");
+            setActive.getStyleClass().add(isActive ? "btn-filled" : "btn-outline");
+            setActive.setDisable(isActive);
+            setActive.setOnAction(e -> { setActiveAccount(acc.uuid()); populateAccounts(list); });
             Button remove = new Button("Remove");
             remove.getStyleClass().add("btn-outline");
             remove.setOnAction(e -> {
-                try { accountManager.remove(acc.uuid()); populateAccounts(list); if (accountChip != null) accountChip.setText(accountLabel()); }
+                try {
+                    accountManager.remove(acc.uuid());
+                    if (config != null && acc.uuid().equals(config.activeUuid())) config.setActiveUuid("");
+                    populateAccounts(list);
+                    if (accountChip != null) accountChip.setText(accountLabel());
+                    refreshAvatarBar();
+                }
                 catch (Exception ex) { alert(Alert.AlertType.ERROR, "Remove failed", ex.getMessage()); }
             });
-            HBox row = new HBox(12, name, grow, remove);
+            HBox row = new HBox(12, face, name, grow, setActive, remove);
             row.setAlignment(Pos.CENTER_LEFT);
             row.getStyleClass().add("card");
             list.getChildren().add(row);
@@ -1720,6 +1869,7 @@ public class MainApp extends Application {
                 var session = new MicrosoftAuth().loginWithDeviceCode(clientId,
                         (message, userCode, uri) -> Platform.runLater(() -> showCode(codeBox, message, userCode, uri)));
                 accountManager.add(session);
+                if (config != null && config.activeUuid().isBlank()) config.setActiveUuid(session.uuid());
                 Platform.runLater(() -> { hide(codeBox); refresh.run(); add.setDisable(false);
                         alert(Alert.AlertType.INFORMATION, "Signed in", "Added " + session.username() + "."); });
             } catch (MicrosoftAuth.AppNotApprovedException ex) {
@@ -1755,6 +1905,147 @@ public class MainApp extends Application {
     }
 
     private void hide(VBox box) { box.getChildren().clear(); box.setVisible(false); box.setManaged(false); }
+
+    // ---- command palette (Ctrl+K) ----
+
+    private record PaletteAction(String icon, String label, String keywords, Runnable run) {}
+
+    private StackPane buildPalette() {
+        paletteField = new TextField();
+        paletteField.setPromptText("Type a command…  (Esc to close)");
+        paletteField.getStyleClass().add("palette-field");
+
+        paletteResults = new VBox(2);
+        paletteResults.getStyleClass().add("palette-results");
+        ScrollPane scroll = new ScrollPane(paletteResults);
+        scroll.setFitToWidth(true);
+        scroll.getStyleClass().addAll("scroll-pane", "palette-scroll");
+        scroll.setPrefHeight(320);
+
+        VBox box = new VBox(10, paletteField, scroll);
+        box.getStyleClass().add("palette-box");
+        box.setMaxWidth(560);
+        box.setMaxHeight(Region.USE_PREF_SIZE);
+        StackPane.setAlignment(box, Pos.TOP_CENTER);
+        StackPane.setMargin(box, new Insets(70, 0, 0, 0));
+
+        paletteOverlay = new StackPane(box);
+        paletteOverlay.getStyleClass().add("palette-overlay");
+        paletteOverlay.setVisible(false);
+        paletteOverlay.setManaged(false);
+        paletteOverlay.setOnMouseClicked(e -> { if (e.getTarget() == paletteOverlay) closePalette(); });
+
+        paletteField.textProperty().addListener((o, a, b) -> filterPalette(b));
+        paletteField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            switch (e.getCode()) {
+                case ESCAPE -> { closePalette(); e.consume(); }
+                case DOWN -> { movePalette(1); e.consume(); }
+                case UP -> { movePalette(-1); e.consume(); }
+                case ENTER -> { runSelectedPalette(); e.consume(); }
+                default -> { }
+            }
+        });
+        return paletteOverlay;
+    }
+
+    private void openPalette() {
+        if (paletteOverlay == null) return;
+        buildPaletteActions();
+        paletteOverlay.setVisible(true);
+        paletteOverlay.setManaged(true);
+        paletteField.clear();
+        filterPalette("");
+        paletteField.requestFocus();
+    }
+
+    private void closePalette() {
+        if (paletteOverlay == null) return;
+        paletteOverlay.setVisible(false);
+        paletteOverlay.setManaged(false);
+    }
+
+    private void buildPaletteActions() {
+        paletteActions.clear();
+        paletteActions.add(new PaletteAction("◰", "Open Instances", "instance manager games", this::showInstances));
+        paletteActions.add(new PaletteAction("❖", "Open Browse Mods", "browse mods modrinth curseforge content", this::showBrowse));
+        paletteActions.add(new PaletteAction("▤", "Open Library", "library installed mods", this::showLibrary));
+        paletteActions.add(new PaletteAction("⌂", "Open Home", "home dashboard start", this::showHome));
+        paletteActions.add(new PaletteAction("☺", "Open Skins", "skins skin changer", this::showSkins));
+        paletteActions.add(new PaletteAction("⚙", "Open Settings", "settings options config preferences", this::showSettings));
+        paletteActions.add(new PaletteAction("＋", "Create Instance", "new create instance add", this::showCreateDialog));
+        paletteActions.add(new PaletteAction("●", "Add Microsoft Account", "account login sign in microsoft", this::showAccounts));
+        if (instanceManager != null) {
+            for (Instance inst : instanceManager.list()) {
+                paletteActions.add(new PaletteAction("▶", "Play " + inst.name(),
+                        "play launch run " + inst.version() + " " + inst.loader().display(),
+                        () -> onPlay(inst, progress(0.0), new Button("▶"))));
+                paletteActions.add(new PaletteAction("◰", "Open " + inst.name(),
+                        "instance detail edit settings " + inst.version(),
+                        () -> showInstanceDetail(inst)));
+            }
+        }
+    }
+
+    private void filterPalette(String raw) {
+        String q = raw == null ? "" : raw.trim().toLowerCase();
+        paletteFiltered.clear();
+        for (PaletteAction a : paletteActions) {
+            if (q.isEmpty() || a.label().toLowerCase().contains(q) || a.keywords().toLowerCase().contains(q)) {
+                paletteFiltered.add(a);
+            }
+        }
+        paletteSelected = 0;
+        renderPalette();
+    }
+
+    private void renderPalette() {
+        paletteResults.getChildren().clear();
+        if (paletteFiltered.isEmpty()) {
+            Label none = new Label("No matching commands.");
+            none.getStyleClass().add("muted");
+            none.setPadding(new Insets(10));
+            paletteResults.getChildren().add(none);
+            return;
+        }
+        for (int i = 0; i < paletteFiltered.size(); i++) {
+            PaletteAction a = paletteFiltered.get(i);
+            Label ic = new Label(a.icon());
+            ic.getStyleClass().add("palette-icon");
+            ic.setMinWidth(26);
+            Label tx = new Label(a.label());
+            tx.getStyleClass().add("palette-label");
+            HBox row = new HBox(10, ic, tx);
+            row.setAlignment(Pos.CENTER_LEFT);
+            row.getStyleClass().add("palette-row");
+            if (i == paletteSelected) row.getStyleClass().add("palette-row-active");
+            final int idx = i;
+            row.setOnMouseClicked(e -> { paletteSelected = idx; runSelectedPalette(); });
+            row.setOnMouseEntered(e -> { paletteSelected = idx; highlightPalette(); });
+            paletteResults.getChildren().add(row);
+        }
+    }
+
+    private void highlightPalette() {
+        for (int i = 0; i < paletteResults.getChildren().size(); i++) {
+            Node n = paletteResults.getChildren().get(i);
+            n.getStyleClass().remove("palette-row-active");
+            if (i == paletteSelected) n.getStyleClass().add("palette-row-active");
+        }
+    }
+
+    private void movePalette(int delta) {
+        if (paletteFiltered.isEmpty()) return;
+        int n = paletteFiltered.size();
+        paletteSelected = ((paletteSelected + delta) % n + n) % n;
+        highlightPalette();
+    }
+
+    private void runSelectedPalette() {
+        if (paletteSelected < 0 || paletteSelected >= paletteFiltered.size()) return;
+        PaletteAction a = paletteFiltered.get(paletteSelected);
+        closePalette();
+        a.run().run();
+    }
 
     // ---- window resize grip ----
 
