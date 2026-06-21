@@ -504,7 +504,8 @@ public class MainApp extends Application {
         nameF.setPrefWidth(280);
 
         Slider ramSlider = new Slider(1024, 16384, inst.ramMb());
-        ramSlider.setPrefWidth(260);
+        ramSlider.setPrefWidth(420);
+        ramSlider.getStyleClass().add("ram-slider");
         ramSlider.setBlockIncrement(512);
         ramSlider.setMajorTickUnit(2048);
         ramSlider.setMinorTickCount(3);
@@ -948,7 +949,7 @@ public class MainApp extends Application {
             toggle.setOnAction(e -> {
                 try {
                     Path target = disabled ? f.resolveSibling(display) : f.resolveSibling(fn + ".disabled");
-                    Files.move(f, target);
+                    Files.move(f, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                     populateFolderItems(inst, folder, list);
                 } catch (Exception ex) { alert(Alert.AlertType.ERROR, "Toggle failed", ex.getMessage()); }
             });
@@ -1586,14 +1587,23 @@ public class MainApp extends Application {
         a.setTitle(title);
         a.setHeaderText(null);
         if (type == Alert.AlertType.ERROR) {
-            // Selectable + copyable text (Ctrl+C / Ctrl+A) for crash logs.
+            // Selectable text + a one-click Copy All for crash logs.
             TextArea ta = new TextArea(body);
             ta.setEditable(false);
             ta.setWrapText(true);
             ta.getStyleClass().add("error-text");
             ta.setPrefColumnCount(46);
             ta.setPrefRowCount(Math.min(16, Math.max(3, body.split("\n").length + 1)));
-            a.getDialogPane().setContent(ta);
+            Button copy = new Button("📋  Copy All");
+            copy.getStyleClass().add("btn-outline");
+            copy.setOnAction(ev -> {
+                ClipboardContent cc = new ClipboardContent();
+                cc.putString(body);
+                Clipboard.getSystemClipboard().setContent(cc);
+                copy.setText("Copied ✓");
+            });
+            VBox boxc = new VBox(8, copy, ta);
+            a.getDialogPane().setContent(boxc);
         } else {
             a.setContentText(body);
         }

@@ -171,6 +171,21 @@
 }
 .slider .axis-tick-mark, .slider .tick-mark { -fx-stroke: #3a3a3a; }
 
+/* bigger red RAM slider */
+.ram-slider { -fx-pref-height: 34; }
+.ram-slider .track {
+    -fx-background-color: linear-gradient(to right, #E53935, #6a1719);
+    -fx-pref-height: 12;
+    -fx-background-radius: 6;
+}
+.ram-slider .thumb {
+    -fx-background-color: #FF4D4D;
+    -fx-pref-width: 24;
+    -fx-pref-height: 24;
+    -fx-background-radius: 12;
+    -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.85), 14, 0.45, 0, 0);
+}
+
 /* ---- instance cards ---- */
 .card {
     -fx-background-color: #0e0f15;
