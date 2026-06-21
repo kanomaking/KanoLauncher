@@ -43,8 +43,12 @@
 
 /* ---- title bar ---- */
 .title-bar {
-    -fx-padding: 12 16 4 18;
+    -fx-padding: 10 14 10 18;
     -fx-alignment: center-left;
+    -fx-min-height: 46;
+    -fx-background-color: linear-gradient(to bottom, rgba(255,255,255,0.025), transparent);
+    -fx-border-color: transparent transparent -kano-hairline transparent;
+    -fx-border-width: 0 0 1 0;
 }
 .brand-k {
     -fx-text-fill: -kano-accent-bright;
@@ -55,9 +59,11 @@
 .title-text { -fx-text-fill: -kano-text-dim; -fx-font-size: 12px; }
 .win-btn {
     -fx-background-color: transparent;
-    -fx-text-fill: -kano-text-mute;
-    -fx-font-size: 13px;
-    -fx-padding: 2 10 2 10;
+    -fx-text-fill: -kano-text-dim;
+    -fx-font-size: 14px;
+    -fx-min-width: 34;
+    -fx-min-height: 28;
+    -fx-padding: 2 8 2 8;
     -fx-cursor: hand;
     -fx-background-radius: 8;
 }
