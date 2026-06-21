@@ -55,6 +55,7 @@ import javafx.scene.image.ImageView;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
@@ -210,16 +211,17 @@ public class MainApp extends Application {
         stage.setY(vb.getMinY() + (vb.getHeight() - winH) / 2);
         stage.show();
         logWindowGeometry("after-show");
-        // Force the window to the FRONT. Launched from a terminal, Windows' focus-stealing prevention
-        // opens it BEHIND the terminal — so its title bar looks "hidden". A brief always-on-top nudge
-        // pops it above everything, then we release it so other windows can cover it normally again.
-        stage.toFront();
-        stage.requestFocus();
-        stage.setAlwaysOnTop(true); // topmost briefly so it rises above the launching terminal/IDE
         Platform.runLater(this::clampOnScreen);
-        PauseTransition raise = new PauseTransition(Duration.millis(700));
-        raise.setOnFinished(ev -> { stage.setAlwaysOnTop(false); stage.toFront(); });
-        raise.play();
+        // Force the window ABOVE other apps on launch (Windows hides it behind the foreground app /
+        // a running game otherwise). It stays topmost until you actually click or type on it — so it
+        // is guaranteed visible when it opens, then behaves like a normal window. A 6s timer is a
+        // fallback in case there's no interaction.
+        bringToFront();
+        scene.addEventHandler(MouseEvent.MOUSE_PRESSED, ev -> stage.setAlwaysOnTop(false));
+        scene.addEventHandler(KeyEvent.KEY_PRESSED, ev -> stage.setAlwaysOnTop(false));
+        PauseTransition releaseTop = new PauseTransition(Duration.millis(6000));
+        releaseTop.setOnFinished(ev -> stage.setAlwaysOnTop(false));
+        releaseTop.play();
 
         scene.getAccelerators().put(
                 new KeyCodeCombination(KeyCode.R, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
@@ -231,6 +233,30 @@ public class MainApp extends Application {
 
         applyTheme();
         checkForUpdate();
+    }
+
+    /**
+     * Raise the window above all other apps. Sets it topmost (renders over normal + borderless
+     * windows immediately) and does a quick minimize→restore, which Windows treats as a user-driven
+     * foreground change — defeating focus-stealing prevention so it pops to the front reliably.
+     * (Exclusive-fullscreen games can't be drawn over by anything — Alt+Tab in that one case.)
+     */
+    private void bringToFront() {
+        if (stage == null) return;
+        stage.setAlwaysOnTop(true);
+        stage.setIconified(false);
+        stage.toFront();
+        stage.requestFocus();
+        Platform.runLater(() -> {
+            stage.setIconified(true);
+            PauseTransition restore = new PauseTransition(Duration.millis(60));
+            restore.setOnFinished(ev -> {
+                stage.setIconified(false);
+                stage.toFront();
+                stage.requestFocus();
+            });
+            restore.play();
+        });
     }
 
     /** Close the launcher and guarantee the JVM exits (a packaged app can otherwise hang on a stray thread). */
