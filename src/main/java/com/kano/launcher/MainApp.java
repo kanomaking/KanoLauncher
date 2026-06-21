@@ -177,7 +177,7 @@ public class MainApp extends Application {
             ft.play();
         });
 
-        showInstances();
+        showHome();   // dashboard landing
 
         Scene scene = new Scene(shell, 1180, 720);
         scene.setFill(Color.TRANSPARENT);
@@ -554,24 +554,153 @@ public class MainApp extends Application {
 
     private void showHome() {
         selectNav(navByName.get("Home"));
-        VBox page = new VBox(18);
+        VBox page = new VBox(22);
         page.getStyleClass().add("content");
-        Label title = new Label("Home");
-        title.getStyleClass().add("page-title");
-        Label sub = new Label("Jump to anything:   ·   Tip: press Ctrl+K for the command palette");
-        sub.getStyleClass().add("muted");
 
-        FlowPane grid = new FlowPane(16, 16);
+        var acc = activeAccount();
+        String who = acc != null ? acc.username() : "player";
+        int worlds = Stats.countWorlds(resolveDataDir().resolve("instances"));
+        String playtime = stats != null ? stats.playtimeText() : "0h";
+        int launches = stats != null ? stats.launches() : 0;
+        Instance last = lastPlayedInstance();
+
+        // ---- hero: resume your realm ----
+        Label eyebrow = new Label("WELCOME BACK");
+        eyebrow.getStyleClass().add("hero-eyebrow");
+        Label brand = new Label(launcherName());
+        brand.getStyleClass().add("hero-title");
+        Label tagline = new Label(last != null
+                ? "Pick up where you left off, " + who + "."
+                : "Create your first instance and forge your realm, " + who + ".");
+        tagline.getStyleClass().add("hero-tagline");
+        tagline.setWrapText(true);
+
+        ProgressBar heroBar = progress(0.0);
+        heroBar.setPrefWidth(260);
+        heroBar.setVisible(false);
+        heroBar.setManaged(false);
+        Button cta = new Button(last != null ? "▶  Continue · " + last.name() : "Create your first instance");
+        cta.getStyleClass().add("btn-filled");
+        cta.setStyle("-fx-font-size: 14px; -fx-padding: 11 22 11 22;");
+        cta.setOnAction(e -> {
+            if (last != null) { heroBar.setVisible(true); heroBar.setManaged(true); onPlay(last, heroBar, cta); }
+            else showCreateDialog();
+        });
+        Button browse = new Button("Browse mods");
+        browse.getStyleClass().add("btn-outline");
+        browse.setStyle("-fx-padding: 11 18 11 18;");
+        browse.setOnAction(e -> showBrowse());
+        HBox ctaRow = new HBox(12, cta, browse);
+        ctaRow.setAlignment(Pos.CENTER_LEFT);
+
+        HBox statRow = new HBox(36,
+                heroStat(String.valueOf(worlds), "Worlds"),
+                heroStat(playtime, "Played"),
+                heroStat(String.valueOf(launches), "Launches"));
+        statRow.setAlignment(Pos.CENTER_LEFT);
+
+        Region heroGap = new Region();
+        heroGap.setMinHeight(6);
+        VBox heroLeft = new VBox(10, eyebrow, brand, tagline, ctaRow, heroBar, heroGap, statRow);
+        heroLeft.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(heroLeft, Priority.ALWAYS);
+
+        HBox hero = new HBox(20, heroLeft);
+        Node king = heroKing();
+        if (king != null) hero.getChildren().add(king);
+        hero.setAlignment(Pos.CENTER_LEFT);
+        hero.getStyleClass().add("hero-panel");
+        page.getChildren().add(hero);
+
+        // ---- jump back in: recently played ----
+        var recents = instanceManager == null ? List.<Instance>of()
+                : instanceManager.list().stream()
+                    .filter(i -> i.lastPlayedEpoch() > 0)
+                    .sorted((a, b) -> Long.compare(b.lastPlayedEpoch(), a.lastPlayedEpoch()))
+                    .limit(4).toList();
+        if (!recents.isEmpty()) {
+            Label jb = new Label("Jump back in");
+            jb.getStyleClass().add("group-title");
+            FlowPane recRow = new FlowPane(14, 14);
+            for (Instance i : recents) recRow.getChildren().add(recentCard(i));
+            page.getChildren().addAll(jb, recRow);
+        }
+
+        // ---- quick actions ----
+        Label qa = new Label("Quick actions");
+        qa.getStyleClass().add("group-title");
+        FlowPane grid = new FlowPane(14, 14);
         grid.getChildren().addAll(
-                homeCard("◰", "Instances", "Create and launch your games", this::showInstances),
-                homeCard("▤", "Library", "Your installed content", this::showLibrary),
+                homeCard("◰", "Instances", "Create and launch", this::showInstances),
                 homeCard("❖", "Browse Mods", "Find mods on Modrinth", this::showBrowse),
+                homeCard("▤", "Library", "Installed content", this::showLibrary),
                 homeCard("☺", "Skins", "Change your skin", this::showSkins),
-                homeCard("●", "Accounts", "Manage Microsoft accounts", this::showAccounts),
+                homeCard("●", "Accounts", "Microsoft accounts", this::showAccounts),
                 homeCard("⚙", "Settings", "Launcher options", this::showSettings));
+        Label tip = new Label("Tip: press Ctrl+K anywhere for the command palette.");
+        tip.getStyleClass().add("muted");
+        page.getChildren().addAll(qa, grid, tip);
 
-        page.getChildren().addAll(title, sub, grid);
-        content.getChildren().setAll(page);
+        ScrollPane scroll = new ScrollPane(page);
+        scroll.setFitToWidth(true);
+        scroll.getStyleClass().add("scroll-pane");
+        content.getChildren().setAll(scroll);
+    }
+
+    private Instance lastPlayedInstance() {
+        if (instanceManager == null) return null;
+        return instanceManager.list().stream()
+                .filter(i -> i.lastPlayedEpoch() > 0)
+                .max((a, b) -> Long.compare(a.lastPlayedEpoch(), b.lastPlayedEpoch()))
+                .orElse(null);
+    }
+
+    private VBox heroStat(String value, String label) {
+        Label v = new Label(value);
+        v.getStyleClass().add("stat-num");
+        Label l = new Label(label);
+        l.getStyleClass().add("stat-label");
+        VBox b = new VBox(1, v, l);
+        b.setAlignment(Pos.CENTER_LEFT);
+        return b;
+    }
+
+    private Node heroKing() {
+        var url = getClass().getResource("king-avatar.png");
+        if (url == null) url = getClass().getResource("king-bg.png");
+        if (url == null) return null;
+        ImageView iv = new ImageView(new Image(url.toExternalForm(), 250, 250, true, true));
+        iv.setEffect(new javafx.scene.effect.DropShadow(30, javafx.scene.paint.Color.web("#000000")));
+        StackPane wrap = new StackPane(iv);
+        wrap.setMinWidth(250);
+        wrap.setAlignment(Pos.CENTER);
+        return wrap;
+    }
+
+    private Region recentCard(Instance inst) {
+        StackPane tile = iconTile(inst, true);
+        Label name = new Label(inst.name());
+        name.getStyleClass().add("card-title-sm");
+        Label meta = new Label(inst.version() + "  ·  " + inst.loader().display());
+        meta.getStyleClass().add("card-sub");
+        VBox info = new VBox(3, name, meta);
+        HBox.setHgrow(info, Priority.ALWAYS);
+        ProgressBar bar = progress(0.0);
+        bar.setMaxWidth(0);
+        bar.setVisible(false);
+        bar.setManaged(false);
+        Button play = new Button("▶");
+        play.getStyleClass().add("play-circle");
+        play.setStyle("-fx-min-width:38; -fx-min-height:38; -fx-max-width:38; -fx-max-height:38; -fx-font-size:14px;");
+        play.setOnAction(e -> onPlay(inst, bar, play));
+        HBox row = new HBox(12, tile, info, play);
+        row.setAlignment(Pos.CENTER_LEFT);
+        StackPane card = new StackPane(row);
+        card.getStyleClass().add("card");
+        card.setPrefWidth(290);
+        card.setStyle("-fx-cursor: hand;");
+        card.setOnMouseClicked(e -> showInstanceDetail(inst));
+        return card;
     }
 
     private Region homeCard(String icon, String title, String desc, Runnable action) {

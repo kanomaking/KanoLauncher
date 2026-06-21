@@ -120,6 +120,29 @@
     -fx-padding: 4 0 2 2;
 }
 
+/* ---- Home hero ---- */
+.hero-panel {
+    -fx-background-color:
+        radial-gradient(focus-angle 0deg, focus-distance 0%, center 86% 26%, radius 66%, -kano-tint-strong, transparent),
+        linear-gradient(to bottom right, #16181F, #0C0E13);
+    -fx-background-radius: 18;
+    -fx-border-radius: 18;
+    -fx-border-color: -kano-hairline-strong;
+    -fx-border-width: 1;
+    -fx-padding: 28 30 28 30;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.5), 26, 0.0, 0, 8);
+}
+.hero-eyebrow { -fx-text-fill: -kano-accent-bright; -fx-font-size: 12px; -fx-font-weight: bold; }
+.hero-title { -fx-text-fill: -kano-text; -fx-font-size: 40px; -fx-font-weight: bold; }
+.hero-tagline { -fx-text-fill: -kano-text-dim; -fx-font-size: 15px; }
+.stat-num {
+    -fx-text-fill: #FFFFFF;
+    -fx-font-size: 25px;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, -kano-glow, 6, 0.15, 0, 0);
+}
+.stat-label { -fx-text-fill: -kano-text-mute; -fx-font-size: 11px; }
+
 /* sliding on/off switch */
 .switch-track {
     -fx-min-width: 46; -fx-pref-width: 46; -fx-max-width: 46;
