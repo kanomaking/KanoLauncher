@@ -1,6 +1,12 @@
 /* KanoLauncher theme — neon red glow on black, silver accents */
 
-.root { -fx-font-family: "Segoe UI", "Inter", sans-serif; }
+.root {
+    -fx-font-family: "Segoe UI", "Inter", sans-serif;
+    /* Theme accent — overridden live on the scene root by the color-scheme setting. */
+    -kano-accent: #D32F2F;
+    -kano-accent-bright: #E53935;
+    -kano-accent-dark: #B71C1C;
+}
 
 /* transparent padding so the panel's outer glow is visible over the desktop */
 .app-shell {
@@ -24,7 +30,7 @@
     -fx-alignment: center-left;
 }
 .brand-k {
-    -fx-text-fill: #E53935;
+    -fx-text-fill: -kano-accent-bright;
     -fx-font-size: 20px;
     -fx-font-weight: bold;
     -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.9), 14, 0.5, 0, 0);
@@ -39,7 +45,7 @@
     -fx-background-radius: 6;
 }
 .win-btn:hover { -fx-background-color: #1A0707; -fx-text-fill: #FFFFFF; }
-.win-close:hover { -fx-background-color: #D32F2F; -fx-text-fill: #FFFFFF; }
+.win-close:hover { -fx-background-color: -kano-accent; -fx-text-fill: #FFFFFF; }
 .account-chip {
     -fx-background-color: #14151b;
     -fx-text-fill: #C0C0C0;
@@ -50,7 +56,7 @@
     -fx-font-size: 12px;
     -fx-cursor: hand;
 }
-.account-chip:hover { -fx-border-color: #E53935; -fx-text-fill: #FFFFFF; }
+.account-chip:hover { -fx-border-color: -kano-accent-bright; -fx-text-fill: #FFFFFF; }
 
 .avatar-bar { -fx-padding: 0 4 0 0; }
 .avatar-btn {
@@ -60,7 +66,7 @@
     -fx-background-radius: 10;
     -fx-cursor: hand;
 }
-.avatar-btn:hover { -fx-border-color: #E53935; }
+.avatar-btn:hover { -fx-border-color: -kano-accent-bright; }
 .avatar-btn-active {
     -fx-border-color: #FFC107;
     -fx-effect: dropshadow(gaussian, rgba(255,193,7,0.55), 8, 0, 0, 0);
@@ -83,7 +89,7 @@
 }
 .brand-row { -fx-alignment: center-left; -fx-padding: 6 0 18 4; }
 .brand-logo {
-    -fx-text-fill: #E53935;
+    -fx-text-fill: -kano-accent-bright;
     -fx-font-size: 24px;
     -fx-font-weight: bold;
     -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.9), 16, 0.5, 0, 0);
@@ -100,7 +106,7 @@
 .nav-item:hover { -fx-background-color: #15080a; }
 .nav-item-active {
     -fx-background-color: linear-gradient(to right, #1d0a0c, #120708);
-    -fx-border-color: transparent #E53935 transparent transparent;
+    -fx-border-color: transparent -kano-accent-bright transparent transparent;
     -fx-border-width: 0 3 0 0;
     -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.45), 14, 0.2, 0, 0);
 }
@@ -116,7 +122,7 @@
 .palette-box {
     -fx-background-color: #0e0f15;
     -fx-background-radius: 12;
-    -fx-border-color: #B71C1C;
+    -fx-border-color: -kano-accent-dark;
     -fx-border-width: 1;
     -fx-border-radius: 12;
     -fx-padding: 14;
@@ -132,7 +138,7 @@
     -fx-font-size: 15px;
     -fx-padding: 9 12 9 12;
 }
-.palette-field:focused { -fx-border-color: #E53935; }
+.palette-field:focused { -fx-border-color: -kano-accent-bright; }
 .palette-scroll { -fx-background-color: transparent; }
 .palette-results { -fx-background-color: transparent; }
 .palette-row {
@@ -141,7 +147,7 @@
     -fx-cursor: hand;
 }
 .palette-row-active { -fx-background-color: linear-gradient(to right, #1d0a0c, #120708); }
-.palette-icon { -fx-text-fill: #E53935; -fx-font-size: 15px; }
+.palette-icon { -fx-text-fill: -kano-accent-bright; -fx-font-size: 15px; }
 .palette-label { -fx-text-fill: #E0E0E0; -fx-font-size: 14px; }
 .palette-row-active .palette-label { -fx-text-fill: #FFFFFF; }
 .page-title { -fx-text-fill: #FFFFFF; -fx-font-size: 28px; -fx-font-weight: bold; }
@@ -150,8 +156,8 @@
 /* ---- buttons ---- */
 .btn-outline {
     -fx-background-color: transparent;
-    -fx-text-fill: #E53935;
-    -fx-border-color: #D32F2F;
+    -fx-text-fill: -kano-accent-bright;
+    -fx-border-color: -kano-accent;
     -fx-border-radius: 10;
     -fx-background-radius: 10;
     -fx-padding: 9 18 9 18;
@@ -164,7 +170,7 @@
     -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.5), 14, 0.2, 0, 0);
 }
 .btn-filled {
-    -fx-background-color: #D32F2F;
+    -fx-background-color: -kano-accent;
     -fx-text-fill: #FFFFFF;
     -fx-background-radius: 10;
     -fx-padding: 9 18 9 18;
@@ -173,7 +179,7 @@
     -fx-cursor: hand;
     -fx-effect: dropshadow(gaussian, rgba(211,47,47,0.55), 16, 0.25, 0, 0);
 }
-.btn-filled:hover { -fx-background-color: #E53935; }
+.btn-filled:hover { -fx-background-color: -kano-accent-bright; }
 
 /* ---- global form controls (main window) — match the theme ---- */
 .text-field {
@@ -185,7 +191,7 @@
     -fx-border-radius: 8;
     -fx-padding: 7 12 7 12;
 }
-.text-field:focused { -fx-border-color: #E53935; }
+.text-field:focused { -fx-border-color: -kano-accent-bright; }
 .choice-box {
     -fx-background-color: #14151b;
     -fx-border-color: rgba(211,47,47,0.55);
@@ -194,7 +200,7 @@
     -fx-padding: 4 10 4 10;
     -fx-cursor: hand;
 }
-.choice-box:hover { -fx-border-color: #E53935; }
+.choice-box:hover { -fx-border-color: -kano-accent-bright; }
 .choice-box .label { -fx-text-fill: #E0E0E0; }
 .choice-box > .open-button > .arrow { -fx-background-color: #C0C0C0; }
 .combo-box, .combo-box .text-field {
@@ -214,7 +220,7 @@
 .kano-tabs .tab .tab-label { -fx-text-fill: #C0C0C0; -fx-font-size: 13px; }
 .kano-tabs .tab:hover { -fx-background-color: #1a0a0c; }
 .kano-tabs .tab:selected {
-    -fx-background-color: #B71C1C;
+    -fx-background-color: -kano-accent-dark;
     -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.45), 12, 0.2, 0, 0);
 }
 .kano-tabs .tab:selected .tab-label { -fx-text-fill: #FFFFFF; }
@@ -224,13 +230,13 @@
 /* slider (RAM) */
 .slider .track { -fx-background-color: #1a1b22; -fx-background-radius: 4; }
 .slider .thumb {
-    -fx-background-color: #E53935;
+    -fx-background-color: -kano-accent-bright;
     -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.6), 8, 0.3, 0, 0);
 }
 .slider .axis-tick-mark, .slider .tick-mark { -fx-stroke: #3a3a3a; }
 
 .ram-value {
-    -fx-text-fill: #E53935;
+    -fx-text-fill: -kano-accent-bright;
     -fx-font-size: 15px;
     -fx-font-weight: bold;
     -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.4), 6, 0.3, 0, 0);
@@ -239,7 +245,7 @@
 /* bigger red RAM slider */
 .ram-slider { -fx-pref-height: 34; }
 .ram-slider .track {
-    -fx-background-color: linear-gradient(to right, #E53935, #6a1719);
+    -fx-background-color: linear-gradient(to right, -kano-accent-bright, #6a1719);
     -fx-pref-height: 12;
     -fx-background-radius: 6;
 }
@@ -305,7 +311,7 @@
 .block-swatch:hover { -fx-border-color: #FFFFFF; -fx-border-width: 2; }
 
 .play-circle {
-    -fx-background-color: #D32F2F;
+    -fx-background-color: -kano-accent;
     -fx-background-radius: 100;
     -fx-min-width: 54; -fx-min-height: 54; -fx-max-width: 54; -fx-max-height: 54;
     -fx-text-fill: #FFFFFF;
@@ -313,7 +319,7 @@
     -fx-cursor: hand;
     -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.7), 18, 0.35, 0, 0);
 }
-.play-circle:hover { -fx-background-color: #E53935; }
+.play-circle:hover { -fx-background-color: -kano-accent-bright; }
 .play-circle.loading {
     -fx-background-color: #E0A200;
     -fx-effect: dropshadow(gaussian, rgba(224,162,0,0.75), 18, 0.4, 0, 0);
@@ -328,7 +334,7 @@
     -fx-padding: 2 6 2 6;
     -fx-background-radius: 6;
 }
-.edit-btn:hover { -fx-text-fill: #E53935; -fx-background-color: #15080a; }
+.edit-btn:hover { -fx-text-fill: -kano-accent-bright; -fx-background-color: #15080a; }
 
 /* progress bar (cosmetic — will reflect install/download later) */
 .kano-prog { -fx-pref-height: 8; }
@@ -337,7 +343,7 @@
     -fx-background-radius: 6;
 }
 .kano-prog > .bar {
-    -fx-background-color: linear-gradient(to right, #B71C1C, #E53935);
+    -fx-background-color: linear-gradient(to right, -kano-accent-dark, -kano-accent-bright);
     -fx-background-radius: 6;
     -fx-padding: 0;
 }
@@ -403,8 +409,8 @@
 
 .kano-dialog .button {
     -fx-background-color: #14151b;
-    -fx-text-fill: #E53935;
-    -fx-border-color: #D32F2F;
+    -fx-text-fill: -kano-accent-bright;
+    -fx-border-color: -kano-accent;
     -fx-border-radius: 8;
     -fx-background-radius: 8;
     -fx-padding: 6 18 6 18;
@@ -413,10 +419,10 @@
 }
 .kano-dialog .button:hover { -fx-background-color: #1a0708; }
 .kano-dialog .button:default {
-    -fx-background-color: #D32F2F;
+    -fx-background-color: -kano-accent;
     -fx-text-fill: #FFFFFF;
 }
-.kano-dialog .button:default:hover { -fx-background-color: #E53935; }
+.kano-dialog .button:default:hover { -fx-background-color: -kano-accent-bright; }
 
 .kano-dialog .text-field {
     -fx-background-color: #14151b;
@@ -440,7 +446,7 @@
     -fx-border-color: rgba(211,47,47,0.5);
     -fx-background-radius: 4;
 }
-.kano-dialog .check-box:selected > .box > .mark { -fx-background-color: #E53935; }
+.kano-dialog .check-box:selected > .box > .mark { -fx-background-color: -kano-accent-bright; }
 
 /* dropdown popups (choice boxes) — dark */
 .context-menu {
@@ -449,7 +455,7 @@
     -fx-background-radius: 6;
 }
 .context-menu .menu-item .label { -fx-text-fill: #C0C0C0; }
-.context-menu .menu-item:focused { -fx-background-color: #B71C1C; }
+.context-menu .menu-item:focused { -fx-background-color: -kano-accent-dark; }
 .context-menu .menu-item:focused .label { -fx-text-fill: #FFFFFF; }
 
 /* selectable error/crash-log text area inside dialogs */

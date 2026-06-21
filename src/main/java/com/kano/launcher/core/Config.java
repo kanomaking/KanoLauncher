@@ -14,6 +14,8 @@ public final class Config {
     private final Path file;
     private String curseforgeApiKey = "";
     private String activeUuid = "";
+    private String launcherName = "KanoLauncher";
+    private String themeKey = "crimson";
 
     public Config(Path dataDir) {
         this.file = dataDir.resolve("config.json");
@@ -39,12 +41,32 @@ public final class Config {
         save();
     }
 
+    public String launcherName() {
+        return launcherName == null || launcherName.isBlank() ? "KanoLauncher" : launcherName;
+    }
+
+    public void setLauncherName(String name) {
+        this.launcherName = name == null || name.isBlank() ? "KanoLauncher" : name.trim();
+        save();
+    }
+
+    public String themeKey() {
+        return themeKey == null || themeKey.isBlank() ? "crimson" : themeKey;
+    }
+
+    public void setThemeKey(String key) {
+        this.themeKey = key == null || key.isBlank() ? "crimson" : key.trim();
+        save();
+    }
+
     private void load() {
         try {
             if (Files.exists(file)) {
                 JsonObject o = new Gson().fromJson(Files.readString(file, StandardCharsets.UTF_8), JsonObject.class);
                 if (o != null && o.has("curseforgeApiKey")) curseforgeApiKey = o.get("curseforgeApiKey").getAsString();
                 if (o != null && o.has("activeUuid")) activeUuid = o.get("activeUuid").getAsString();
+                if (o != null && o.has("launcherName")) launcherName = o.get("launcherName").getAsString();
+                if (o != null && o.has("themeKey")) themeKey = o.get("themeKey").getAsString();
             }
         } catch (Exception ignored) {
         }
@@ -55,6 +77,8 @@ public final class Config {
             JsonObject o = new JsonObject();
             o.addProperty("curseforgeApiKey", curseforgeApiKey);
             o.addProperty("activeUuid", activeUuid);
+            o.addProperty("launcherName", launcherName);
+            o.addProperty("themeKey", themeKey);
             Path tmp = file.resolveSibling("config.json.tmp");
             Files.writeString(tmp, new Gson().toJson(o), StandardCharsets.UTF_8);
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);

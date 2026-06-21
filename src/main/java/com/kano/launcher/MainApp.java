@@ -108,6 +108,8 @@ public class MainApp extends Application {
     private double dragX, dragY;
     private Label accountChip;
     private HBox avatarBar;
+    private Label titleText;
+    private Label brandWord;
     private Stats stats;
     private Label statsLabel;
     private Config config;
@@ -167,7 +169,7 @@ public class MainApp extends Application {
                 new KeyCodeCombination(KeyCode.K, KeyCombination.CONTROL_DOWN), this::openPalette);
 
         stage.initStyle(StageStyle.TRANSPARENT);
-        stage.setTitle("KanoLauncher");
+        stage.setTitle(launcherName());
         // Window / taskbar icon = the king (prefers a square avatar if present, else the render).
         var iconUrl = getClass().getResource("king-avatar.png");
         if (iconUrl == null) iconUrl = getClass().getResource("king-bg.png");
@@ -177,7 +179,33 @@ public class MainApp extends Application {
         stage.setMinHeight(600);
         stage.show();
 
+        applyTheme();
         checkForUpdate();
+    }
+
+    private String launcherName() {
+        return config != null ? config.launcherName() : "KanoLauncher";
+    }
+
+    // ---- color themes ----
+
+    private record Theme(String name, String accent, String bright, String dark) {}
+
+    private static final java.util.Map<String, Theme> THEMES = new java.util.LinkedHashMap<>();
+    static {
+        THEMES.put("crimson", new Theme("Crimson", "#D32F2F", "#E53935", "#B71C1C"));
+        THEMES.put("ocean", new Theme("Ocean", "#1565C0", "#2196F3", "#0D47A1"));
+        THEMES.put("forest", new Theme("Forest", "#2E7D32", "#43A047", "#1B5E20"));
+        THEMES.put("amethyst", new Theme("Amethyst", "#7B1FA2", "#9C27B0", "#4A148C"));
+        THEMES.put("gold", new Theme("Gold", "#C9A227", "#E0B83A", "#9A7B16"));
+    }
+
+    private void applyTheme() {
+        if (stage == null || stage.getScene() == null) return;
+        Theme t = THEMES.getOrDefault(config != null ? config.themeKey() : "crimson", THEMES.get("crimson"));
+        stage.getScene().getRoot().setStyle(
+                "-kano-accent: " + t.accent() + "; -kano-accent-bright: " + t.bright()
+                + "; -kano-accent-dark: " + t.dark() + ";");
     }
 
     // ---- self-update notification (notify only; see UpdateChecker for the bootstrapper design) ----
@@ -252,8 +280,9 @@ public class MainApp extends Application {
     private HBox buildTitleBar() {
         Label k = new Label("◤K◢");
         k.getStyleClass().add("brand-k");
-        Label title = new Label("KanoLauncher " + VERSION);
+        Label title = new Label(launcherName() + " " + VERSION);
         title.getStyleClass().add("title-text");
+        titleText = title;
 
         Region grow = new Region();
         HBox.setHgrow(grow, Priority.ALWAYS);
@@ -369,8 +398,9 @@ public class MainApp extends Application {
 
         Label logo = new Label("K");
         logo.getStyleClass().add("brand-logo");
-        Label word = new Label("KanoLauncher");
+        Label word = new Label(launcherName());
         word.getStyleClass().add("brand-word");
+        brandWord = word;
         HBox brand = new HBox(10, logo, word);
         brand.getStyleClass().add("brand-row");
 
@@ -413,7 +443,7 @@ public class MainApp extends Application {
         page.getStyleClass().add("content");
         Label title = new Label("Home");
         title.getStyleClass().add("page-title");
-        Label sub = new Label("Jump to anything:");
+        Label sub = new Label("Jump to anything:   ·   Tip: press Ctrl+K for the command palette");
         sub.getStyleClass().add("muted");
 
         FlowPane grid = new FlowPane(16, 16);
@@ -1750,7 +1780,47 @@ public class MainApp extends Application {
         VBox bgBox = new VBox(8, bgLbl, bgHelp, new HBox(10, chooseBg, resetBg));
         bgBox.setStyle("-fx-padding: 12 0 0 0;");
 
-        page.getChildren().addAll(t, cid, dir, cfBox, bgBox);
+        // Launcher name
+        Label nameLbl = new Label("Launcher name");
+        nameLbl.getStyleClass().add("card-title-sm");
+        TextField nameField = new TextField(launcherName());
+        nameField.setPrefWidth(280);
+        Button saveName = new Button("Save Name");
+        saveName.getStyleClass().add("btn-filled");
+        saveName.setOnAction(e -> {
+            if (config != null) config.setLauncherName(nameField.getText());
+            String nm = launcherName();
+            if (titleText != null) titleText.setText(nm + " " + VERSION);
+            if (brandWord != null) brandWord.setText(nm);
+            if (stage != null) stage.setTitle(nm);
+            alert(Alert.AlertType.INFORMATION, "Saved", "Launcher name set to " + nm + ".");
+        });
+        VBox nameBox = new VBox(8, nameLbl, new HBox(10, nameField, saveName));
+        nameBox.setStyle("-fx-padding: 12 0 0 0;");
+
+        // Color scheme
+        Label themeLbl = new Label("Color scheme");
+        themeLbl.getStyleClass().add("card-title-sm");
+        ChoiceBox<String> themeBox = new ChoiceBox<>();
+        for (var en : THEMES.entrySet()) themeBox.getItems().add(en.getValue().name());
+        String curKey = config != null ? config.themeKey() : "crimson";
+        themeBox.getSelectionModel().select(THEMES.getOrDefault(curKey, THEMES.get("crimson")).name());
+        themeBox.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
+            for (var en : THEMES.entrySet()) {
+                if (en.getValue().name().equals(b)) {
+                    if (config != null) config.setThemeKey(en.getKey());
+                    applyTheme();
+                    break;
+                }
+            }
+        });
+        VBox themeSection = new VBox(8, themeLbl, themeBox);
+        themeSection.setStyle("-fx-padding: 12 0 0 0;");
+
+        Label tip = new Label("Tip: press Ctrl+K anywhere to open the command palette.");
+        tip.getStyleClass().add("muted");
+
+        page.getChildren().addAll(t, tip, nameBox, themeSection, cid, dir, cfBox, bgBox);
         content.getChildren().setAll(page);
     }
 
