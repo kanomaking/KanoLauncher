@@ -3,8 +3,10 @@ package com.kano.launcher;
 import com.kano.launcher.auth.MicrosoftAuth;
 import com.kano.launcher.core.AccountManager;
 import com.kano.launcher.core.Instance;
+import com.kano.launcher.core.GameInstaller;
 import com.kano.launcher.core.InstanceManager;
 import com.kano.launcher.core.Loader;
+import com.kano.launcher.core.VersionDetail;
 import com.kano.launcher.core.VersionManifest;
 
 import javafx.application.Application;
@@ -296,7 +298,6 @@ public class MainApp extends Application {
         title.getStyleClass().add("card-title");
         Button play = new Button("▶");
         play.getStyleClass().add("play-circle");
-        play.setOnAction(e -> onPlay(inst));
         HBox titleRow = new HBox(16, title, play);
         titleRow.setAlignment(Pos.CENTER_LEFT);
 
@@ -304,7 +305,8 @@ public class MainApp extends Application {
         meta.getStyleClass().add("card-meta");
         Label sub = new Label("Last played: " + lastPlayed(inst));
         sub.getStyleClass().add("card-sub");
-        ProgressBar bar = progress(1.0);
+        ProgressBar bar = progress(0.0);
+        play.setOnAction(e -> onInstall(inst, bar));
 
         VBox info = new VBox(6, titleRow, meta, sub, bar);
         HBox.setHgrow(info, Priority.ALWAYS);
@@ -325,7 +327,7 @@ public class MainApp extends Application {
         meta.getStyleClass().add("card-meta");
         Label sub = new Label("Last played: " + lastPlayed(inst));
         sub.getStyleClass().add("card-sub");
-        ProgressBar bar = progress(0.55);
+        ProgressBar bar = progress(0.0);
         VBox info = new VBox(4, title, meta, sub, bar);
         HBox.setHgrow(info, Priority.ALWAYS);
 
@@ -334,7 +336,7 @@ public class MainApp extends Application {
         Button play = new Button("▶");
         play.getStyleClass().add("play-circle");
         play.setStyle("-fx-min-width:40; -fx-min-height:40; -fx-max-width:40; -fx-max-height:40; -fx-font-size:15px;");
-        play.setOnAction(e -> onPlay(inst));
+        play.setOnAction(e -> onInstall(inst, bar));
         row.getChildren().add(play);
 
         StackPane card = new StackPane(row, editIcon(inst));
@@ -382,10 +384,35 @@ public class MainApp extends Application {
                 .format(Instant.ofEpochMilli(inst.lastPlayedEpoch()));
     }
 
-    private void onPlay(Instance inst) {
-        alert(Alert.AlertType.INFORMATION, "Launch",
-                "Download + launch pipeline is the next build step.\n\nInstance: " + inst.name()
-                + " (" + inst.version() + " / " + inst.loader().display() + ")");
+    private void onInstall(Instance inst, ProgressBar bar) {
+        if (instanceManager == null) { alert(Alert.AlertType.ERROR, "Error", initError); return; }
+        Thread t = new Thread(() -> {
+            try {
+                Platform.runLater(() -> bar.setProgress(0));
+                VersionManifest vm = versionManifest;
+                if (vm == null) { vm = VersionManifest.fetch(); versionManifest = vm; }
+                VersionManifest.VersionEntry entry = vm.find(inst.version());
+                if (entry == null) throw new RuntimeException("Version " + inst.version() + " not in manifest.");
+                VersionDetail vd = VersionDetail.fetch(entry);
+                GameInstaller gi = new GameInstaller(resolveDataDir());
+                gi.install(vd, (d, tot, label) -> {
+                    if (d % 25 == 0 || d == tot) {
+                        double frac = tot == 0 ? 0 : (double) d / tot;
+                        Platform.runLater(() -> bar.setProgress(frac));
+                    }
+                });
+                Platform.runLater(() -> {
+                    bar.setProgress(1.0);
+                    alert(Alert.AlertType.INFORMATION, "Files ready",
+                            "Downloaded " + inst.version() + " (" + inst.loader().display() + ").\n\n"
+                            + "Booting the game is the final step — coming next.");
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Install failed", String.valueOf(ex.getMessage())));
+            }
+        }, "install-" + inst.dirName());
+        t.setDaemon(true);
+        t.start();
     }
 
     // ---- create / edit dialogs ----
