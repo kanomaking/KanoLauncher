@@ -8,6 +8,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.time.Duration;
 
@@ -25,19 +26,19 @@ public final class Downloader {
     public static void download(String url, String sha1, Path dest) throws Exception {
         if (Files.exists(dest) && (sha1 == null || sha1.equalsIgnoreCase(sha1(dest)))) return;
         Files.createDirectories(dest.getParent());
-        Path tmp = dest.resolveSibling(dest.getFileName() + ".part");
-        HttpResponse<Path> r = HTTP.send(
-                HttpRequest.newBuilder(URI.create(url)).GET().build(),
-                HttpResponse.BodyHandlers.ofFile(tmp));
-        if (r.statusCode() != 200) {
+        // Unique temp per download so concurrent fetches of the same path can't clobber each other's part file.
+        Path tmp = Files.createTempFile(dest.getParent(), ".dl", ".part");
+        try {
+            HttpResponse<Path> r = HTTP.send(
+                    HttpRequest.newBuilder(URI.create(url)).GET().build(),
+                    HttpResponse.BodyHandlers.ofFile(tmp,
+                            StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
+            if (r.statusCode() != 200) throw new RuntimeException("Download failed (" + r.statusCode() + "): " + url);
+            if (sha1 != null && !sha1.equalsIgnoreCase(sha1(tmp))) throw new RuntimeException("Checksum mismatch: " + url);
+            Files.move(tmp, dest, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
             Files.deleteIfExists(tmp);
-            throw new RuntimeException("Download failed (" + r.statusCode() + "): " + url);
         }
-        if (sha1 != null && !sha1.equalsIgnoreCase(sha1(tmp))) {
-            Files.deleteIfExists(tmp);
-            throw new RuntimeException("Checksum mismatch: " + url);
-        }
-        Files.move(tmp, dest, StandardCopyOption.REPLACE_EXISTING);
     }
 
     public static String sha1(Path file) throws Exception {

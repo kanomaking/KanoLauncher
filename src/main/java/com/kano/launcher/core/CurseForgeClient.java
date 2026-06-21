@@ -160,7 +160,9 @@ public final class CurseForgeClient implements ContentSource {
                         .header("x-api-key", apiKey)
                         .header("Accept", "application/json").GET().build(),
                 HttpResponse.BodyHandlers.ofString());
-        if (r.statusCode() == 403) throw new RuntimeException("CurseForge rejected the API key (403).");
+        if (r.statusCode() == 403) throw new RuntimeException(
+                "CurseForge rejected the API key (403). Re-check it in Settings — get a valid one at "
+                + "console.curseforge.com → API Keys, and make sure there are no extra spaces.");
         if (r.statusCode() != 200) throw new RuntimeException("CurseForge " + r.statusCode());
         return r.body();
     }

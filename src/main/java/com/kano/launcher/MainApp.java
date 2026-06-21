@@ -55,6 +55,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.scene.paint.Color;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
@@ -105,6 +106,7 @@ public class MainApp extends Application {
     private Label statsLabel;
     private Config config;
     private ContentSource browseSource = new ModrinthClient();
+    private ImageView bgView;
 
     @Override
     public void start(Stage stage) {
@@ -564,13 +566,23 @@ public class MainApp extends Application {
             catch (Exception ex) { alert(Alert.AlertType.ERROR, "Delete failed", ex.getMessage()); }
         });
 
+        Button optifine = new Button("Set up OptiFine");
+        optifine.getStyleClass().add("btn-outline");
+        optifine.setOnAction(e -> setupOptifine(inst));
+        Label optHelp = new Label("Installs OptiFabric, then opens the mods folder so you can drop in the "
+                + "OptiFine jar from optifine.net (needed for OptiFine-only capes/skins). Conflicts with Sodium.");
+        optHelp.getStyleClass().add("muted");
+        optHelp.setWrapText(true);
+
         VBox settingsContent = new VBox(12, profLbl, swatches,
                 settingRow("Name", nameF),
                 settingRow("RAM", ramBox),
                 settingRow("Resolution", resBox),
                 settingRow("", fullF),
                 settingRow("Extra JVM args", jvmF),
-                saveSettings, new Region(), del);
+                saveSettings,
+                new Region(), optifine, optHelp,
+                new Region(), del);
         settingsContent.setPadding(new Insets(12));
         ScrollPane settingsScroll = new ScrollPane(settingsContent);
         settingsScroll.setFitToWidth(true);
@@ -1427,6 +1439,33 @@ public class MainApp extends Application {
         t.start();
     }
 
+    private void setupOptifine(Instance inst) {
+        if (inst.loader() != Loader.FABRIC) {
+            alert(Alert.AlertType.WARNING, "Fabric needed",
+                    "OptiFine setup uses OptiFabric, which needs a Fabric instance.");
+            return;
+        }
+        Thread t = new Thread(() -> {
+            try {
+                Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
+                ModInstaller.install(new ModrinthClient(), "optifabric", inst.version(), "fabric", modsDir, m -> {});
+                Platform.runLater(() -> {
+                    openFolder(modsDir);
+                    alert(Alert.AlertType.INFORMATION, "OptiFabric installed",
+                            "Now download OptiFine for " + inst.version() + " from optifine.net and drop the .jar "
+                            + "into the mods folder that just opened.\n\nNote: OptiFine conflicts with Sodium — "
+                            + "disable/remove Sodium in this instance if present.");
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "OptiFine setup failed",
+                        "Couldn't install OptiFabric for " + inst.version() + ": " + ex.getMessage()
+                        + "\n\nOptiFabric may not support this version yet."));
+            }
+        }, "optifine-setup");
+        t.setDaemon(true);
+        t.start();
+    }
+
     private static String formatDownloads(int n) {
         if (n >= 1_000_000) return String.format("%.1fM", n / 1_000_000.0);
         if (n >= 1_000) return String.format("%.0fK", n / 1_000.0);
@@ -1568,8 +1607,47 @@ public class MainApp extends Application {
         VBox cfBox = new VBox(8, cfLbl, cfHelp, cfKey, saveCf);
         cfBox.setStyle("-fx-padding: 12 0 0 0;");
 
-        page.getChildren().addAll(t, cid, dir, cfBox);
+        Label bgLbl = new Label("Launcher background");
+        bgLbl.getStyleClass().add("card-title-sm");
+        Label bgHelp = new Label("Replace the corner watermark with your own image.");
+        bgHelp.getStyleClass().add("muted");
+        Button chooseBg = new Button("Choose Image…");
+        chooseBg.getStyleClass().add("btn-outline");
+        chooseBg.setOnAction(e -> chooseBackground());
+        Button resetBg = new Button("Reset to default");
+        resetBg.getStyleClass().add("btn-outline");
+        resetBg.setOnAction(e -> resetBackground());
+        VBox bgBox = new VBox(8, bgLbl, bgHelp, new HBox(10, chooseBg, resetBg));
+        bgBox.setStyle("-fx-padding: 12 0 0 0;");
+
+        page.getChildren().addAll(t, cid, dir, cfBox, bgBox);
         content.getChildren().setAll(page);
+    }
+
+    private void chooseBackground() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Choose background image");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg", "*.gif"));
+        java.io.File f = fc.showOpenDialog(stage);
+        if (f == null) return;
+        try {
+            Path dest = resolveDataDir().resolve("background.png");
+            Files.copy(f.toPath(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            if (bgView != null) bgView.setImage(new Image(dest.toUri().toString()));
+            alert(Alert.AlertType.INFORMATION, "Background updated", "Your image is now the launcher background.");
+        } catch (Exception ex) {
+            alert(Alert.AlertType.ERROR, "Couldn't set background", String.valueOf(ex.getMessage()));
+        }
+    }
+
+    private void resetBackground() {
+        try {
+            Files.deleteIfExists(resolveDataDir().resolve("background.png"));
+            if (bgView != null) bgView.setImage(loadBackgroundImage());
+            alert(Alert.AlertType.INFORMATION, "Background reset", "Back to the default king watermark.");
+        } catch (Exception ex) {
+            alert(Alert.AlertType.ERROR, "Reset failed", String.valueOf(ex.getMessage()));
+        }
     }
 
     private void simplePage(String title, String sub) {
@@ -1704,19 +1782,29 @@ public class MainApp extends Application {
     /** Dim king-render watermark, contained in the bottom-right corner so it never covers the UI.
      *  No-op if king-bg.png isn't present in resources. */
     private Node buildBackground(Region panel) {
-        var url = getClass().getResource("king-bg.png");
-        if (url == null) return null;
-        ImageView iv = new ImageView(new Image(url.toExternalForm()));
-        iv.setPreserveRatio(true);
-        iv.setFitHeight(540);
-        iv.setOpacity(0.30);
-        iv.setMouseTransparent(true);
-        StackPane holder = new StackPane(iv);
-        StackPane.setAlignment(iv, Pos.BOTTOM_RIGHT);
-        StackPane.setMargin(iv, new Insets(0, 26, 22, 0));
+        bgView = new ImageView();
+        bgView.setPreserveRatio(true);
+        bgView.setFitHeight(540);
+        bgView.setOpacity(0.30);
+        bgView.setMouseTransparent(true);
+        Image img = loadBackgroundImage();
+        if (img != null) bgView.setImage(img);
+        StackPane holder = new StackPane(bgView);
+        StackPane.setAlignment(bgView, Pos.BOTTOM_RIGHT);
+        StackPane.setMargin(bgView, new Insets(0, 26, 22, 0));
         holder.setMouseTransparent(true);
         holder.setPickOnBounds(false);
         return holder;
+    }
+
+    private Image loadBackgroundImage() {
+        Path custom = resolveDataDir().resolve("background.png");
+        try {
+            if (Files.exists(custom)) return new Image(custom.toUri().toString());
+        } catch (Exception ignored) {
+        }
+        var url = getClass().getResource("king-bg.png");
+        return url != null ? new Image(url.toExternalForm()) : null;
     }
 
     /** Apply the launcher theme to a dialog/alert so it matches (no white Modena style). */
