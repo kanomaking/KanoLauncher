@@ -1004,11 +1004,21 @@ public class MainApp extends Application {
         Label sw1Lbl = new Label("Disable all mods (base game)");
         Label sw2Lbl = new Label("Optimization mods only");
         HBox sw1 = new HBox(10, toggleSwitch(baseOn, v -> {
+            if (modFiles(inst).isEmpty()) {
+                alert(Alert.AlertType.INFORMATION, "No mods",
+                        "This instance has no mods yet — add some from Browse first.");
+                return;
+            }
             setAllModsDisabled(inst, v);
             showInstanceDetail(currentInstance(inst));
         }), sw1Lbl);
         sw1.setAlignment(Pos.CENTER_LEFT);
         HBox sw2 = new HBox(10, toggleSwitch(optOn, v -> {
+            if (modFiles(inst).isEmpty()) {
+                alert(Alert.AlertType.INFORMATION, "No mods",
+                        "This instance has no mods yet — add the Performance Pack or mods from Browse first.");
+                return;
+            }
             setOptimizationOnly(inst, v);
             showInstanceDetail(currentInstance(inst));
         }), sw2Lbl);

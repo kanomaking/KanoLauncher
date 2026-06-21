@@ -137,6 +137,13 @@ public final class GameLauncher {
             gameArgs.add(quickServer);
         }
 
+        // Make sure the native-library directories the version JSON references actually exist and
+        // contain the extracted natives. Newer versions (1.21.5+/26.x) point java.library.path at a
+        // SUBFOLDER like ${natives_directory}/java (plus separate /jna, /lwjgl, /netty dirs); we
+        // extract flat into ${natives_directory}, so mirror the dlls into whatever path is declared,
+        // else LWJGL can't find lwjgl.dll and Sodium crashes at preLaunch.
+        provisionNativeDirs(jvmArgs, nativesDir);
+
         String mainClass = forge != null ? forge.mainClass()
                 : (fabric != null ? fabric.mainClass() : vd.mainClass());
 
@@ -154,6 +161,39 @@ public final class GameLauncher {
         pb.redirectErrorStream(true);
         pb.redirectOutput(log.toFile());
         return pb.start();
+    }
+
+    /**
+     * Ensure every native-lib directory the version references exists, and that the one on
+     * {@code java.library.path} holds the extracted natives. Covers the newer Mojang layout where
+     * {@code -Djava.library.path=${natives_directory}/java} (a subfolder) replaces the flat dir.
+     */
+    private static void provisionNativeDirs(List<String> jvmArgs, Path nativesDir) throws Exception {
+        String[] keys = {"-Djava.library.path=", "-Djna.tmpdir=",
+                "-Dorg.lwjgl.system.SharedLibraryExtractPath=", "-Dio.netty.native.workdir="};
+        Path nativesNorm = nativesDir.toAbsolutePath().normalize();
+        for (String a : jvmArgs) {
+            for (String k : keys) {
+                if (!a.startsWith(k)) continue;
+                String val = a.substring(k.length());
+                for (String part : val.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+                    if (part.isBlank()) continue;
+                    Path dir = Path.of(part.trim());
+                    Files.createDirectories(dir);
+                    // For the library search path, copy the extracted natives in if it isn't the flat dir.
+                    if (k.equals("-Djava.library.path=") && !dir.toAbsolutePath().normalize().equals(nativesNorm)) {
+                        if (Files.isDirectory(nativesDir)) {
+                            try (var s = Files.list(nativesDir)) {
+                                for (Path f : (Iterable<Path>) s::iterator) {
+                                    if (Files.isRegularFile(f))
+                                        Files.copy(f, dir.resolve(f.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private static void extractNatives(VersionDetail vd, Path libsDir, Path nativesDir) throws Exception {
