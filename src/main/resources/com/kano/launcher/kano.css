@@ -192,6 +192,15 @@
 .scroll-pane, .scroll-pane > .viewport { -fx-background-color: transparent; }
 .scroll-pane > .scroll-bar:vertical { -fx-background-color: transparent; }
 
+/* bottom stats bar */
+.stats-bar {
+    -fx-padding: 8 18 10 22;
+    -fx-border-color: #1a0a0c transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-alignment: center-left;
+}
+.stats-text { -fx-text-fill: #8a8a8a; -fx-font-size: 12px; }
+
 /* maximized: flat panel, no glow/rounding, fills the screen */
 .app-panel-flat {
     -fx-background-radius: 0;

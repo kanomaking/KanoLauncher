@@ -9,6 +9,7 @@ import com.kano.launcher.core.GameLauncher;
 import com.kano.launcher.core.InstanceManager;
 import com.kano.launcher.core.JreProvider;
 import com.kano.launcher.core.Loader;
+import com.kano.launcher.core.Stats;
 import com.kano.launcher.core.VersionDetail;
 import com.kano.launcher.core.VersionManifest;
 
@@ -77,6 +78,8 @@ public class MainApp extends Application {
     private Stage stage;
     private double dragX, dragY;
     private Label accountChip;
+    private Stats stats;
+    private Label statsLabel;
 
     @Override
     public void start(Stage stage) {
@@ -87,6 +90,7 @@ public class MainApp extends Application {
         inner.setTop(buildTitleBar());
         inner.setLeft(buildSidebar());
         inner.setCenter(content);
+        inner.setBottom(buildStatsBar());
 
         StackPane panel = new StackPane();
         panel.getStyleClass().add("app-panel");
@@ -132,6 +136,7 @@ public class MainApp extends Application {
             Path dir = resolveDataDir();
             accountManager = new AccountManager(dir);
             instanceManager = new InstanceManager(dir);
+            stats = new Stats(dir);
         } catch (Exception e) {
             initError = "Init failed: " + e.getMessage();
         }
@@ -447,6 +452,7 @@ public class MainApp extends Application {
                 // 3. Launch (offline mode — works before app approval).
                 String player = (accountManager != null && !accountManager.list().isEmpty())
                         ? accountManager.list().get(0).username() : "Player";
+                long sessionStart = System.currentTimeMillis();
                 Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric);
                 Platform.runLater(() -> play.getStyleClass().remove("loading"));
 
@@ -457,6 +463,10 @@ public class MainApp extends Application {
 
                 // Surface an early crash with the log tail; silent on normal exit.
                 int code = proc.waitFor();
+                if (stats != null) {
+                    stats.addSession(System.currentTimeMillis() - sessionStart);
+                    Platform.runLater(this::updateStatsBar);
+                }
                 if (code != 0) {
                     String tail = readTail(dataDir.resolve("instances").resolve(inst.dirName())
                             .resolve("launcher-run.log"), 1800);
@@ -481,6 +491,24 @@ public class MainApp extends Application {
         } catch (Exception e) {
             return "(no launch log found)";
         }
+    }
+
+    // ---- stats bar (bottom) ----
+
+    private HBox buildStatsBar() {
+        statsLabel = new Label();
+        statsLabel.getStyleClass().add("stats-text");
+        HBox bar = new HBox(statsLabel);
+        bar.getStyleClass().add("stats-bar");
+        updateStatsBar();
+        return bar;
+    }
+
+    private void updateStatsBar() {
+        if (statsLabel == null || stats == null) return;
+        int worlds = Stats.countWorlds(resolveDataDir().resolve("instances"));
+        statsLabel.setText("👑  " + worlds + " worlds   •   " + stats.playtimeText()
+                + " played   •   " + stats.launches() + " launches");
     }
 
     // ---- create / edit dialogs ----
