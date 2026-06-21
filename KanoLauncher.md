@@ -283,4 +283,26 @@ Most of the 🔴 items (per-world profiles, live dashboard, shareable links) dep
 
 ---
 
+## 11. Built So Far (implementation status — 2026-06)
+
+The launcher is a working JavaFX app (`gradlew run`). Implemented and verified:
+
+**Core loop:** create instance → download (client/libs/natives/assets, content-addressed, SHA-1 verified, parallel) → auto-fetch the right Java (Adoptium) → launch (offline mode). Vanilla + Fabric boot. Forge/NeoForge drafted (not yet wired — see below).
+
+**Accounts/auth:** full MS device-code chain (MSA→XBL→XSTS→Minecraft), AES-256-GCM token store, multi-account avatar bar with active-account switching. Online play gated on Microsoft app approval (form submitted; `login_with_xbox` 403 until approved).
+
+**Content:** Modrinth browse (popular list, debounced search-as-you-type, sort + type filters, pagination, mod icons w/ WebP decode, gold download counts, about page) + install with recursive deps. CurseForge as a second source via `ContentSource` (needs user's own API key — user's key currently 403s on CF's side). One-click Performance Pack (Sodium/Lithium/etc.).
+
+**Instances:** uniform cards (click to open), tabbed detail (Mods / Resource Packs / Shaders / Data Packs / Worlds / Settings), per-type "+ Add" → Browse preselected, enable/disable + remove per file, install routed by type. Per-instance settings: rename, RAM slider, resolution, fullscreen, extra JVM args, profile-block icon. Worlds tab: list + quick-launch + open folder + delete. OptiFine = manual 2-jar flow.
+
+**Customization:** changeable launcher name; **full accent theming** (every accent color — solid, glow, border, tint — flows from looked-up CSS vars set live by `applyTheme()`); 5 presets + **custom color picker**; **background image upload + size + visibility sliders**; Ctrl+K command palette; themed dialogs; stats bar (worlds/playtime/launches). Maximize keeps the taskbar visible.
+
+**Other:** self-update banner (GitHub release check, notify-only).
+
+**Drafted, NOT yet integrated** (agent-produced, pending): NeoForge/Forge loader (installer-processor + patched-client-jar wiring is the remaining hard part), scheduled tasks, instance groups, live dashboard, packaging (.msi/.deb via jpackage — needs WiX + jmods + icons).
+
+**Still wanted:** per-letter colored/bold launcher name (hex codes); deeper per-component customization options.
+
+---
+
 *End of KanoLauncher build plan v2.*
