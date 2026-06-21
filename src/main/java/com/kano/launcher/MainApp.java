@@ -642,7 +642,11 @@ public class MainApp extends Application {
         searchBtn.setOnAction(e -> doSearch.run());
         q.setOnAction(e -> doSearch.run());
 
-        HBox bar = new HBox(10, instPick, q, searchBtn);
+        Button perfBtn = new Button("⚡ Performance Pack");
+        perfBtn.getStyleClass().add("btn-outline");
+        perfBtn.setOnAction(e -> installPerfPack(instPick.getValue(), perfBtn));
+
+        HBox bar = new HBox(10, instPick, q, searchBtn, perfBtn);
         bar.setAlignment(Pos.CENTER_LEFT);
         page.getChildren().addAll(title, bar, scroll);
         content.getChildren().setAll(page);
@@ -720,6 +724,37 @@ public class MainApp extends Application {
                 });
             }
         }, "mod-install");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static final String[] PERF_MODS =
+            {"sodium", "lithium", "ferrite-core", "modernfix", "entityculling", "immediatelyfast", "dynamic-fps"};
+
+    private void installPerfPack(Instance inst, Button btn) {
+        btn.setDisable(true);
+        btn.setText("Installing…");
+        Thread t = new Thread(() -> {
+            int ok = 0;
+            List<String> failed = new ArrayList<>();
+            Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
+            ModrinthClient client = new ModrinthClient();
+            for (String slug : PERF_MODS) {
+                try {
+                    ok += ModInstaller.install(client, slug, inst.version(), "fabric", modsDir, m -> {});
+                } catch (Exception ex) {
+                    failed.add(slug);
+                }
+            }
+            int total = ok;
+            Platform.runLater(() -> {
+                btn.setDisable(false);
+                btn.setText("⚡ Performance Pack");
+                alert(Alert.AlertType.INFORMATION, "Performance Pack",
+                        "Added " + total + " file(s) to " + inst.name() + "."
+                        + (failed.isEmpty() ? "" : "\nSkipped (no compatible version): " + String.join(", ", failed)));
+            });
+        }, "perf-pack");
         t.setDaemon(true);
         t.start();
     }
