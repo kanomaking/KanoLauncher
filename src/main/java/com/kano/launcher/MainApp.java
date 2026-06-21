@@ -179,7 +179,13 @@ public class MainApp extends Application {
 
         showHome();   // dashboard landing
 
-        Scene scene = new Scene(shell, 1180, 720);
+        // Size the window to FIT the screen so the (undecorated) title bar + window buttons are never
+        // pushed off-screen on smaller or DPI-scaled displays. Leave a small margin and center.
+        Rectangle2D vb = Screen.getPrimary().getVisualBounds();
+        double winW = Math.min(1180, vb.getWidth() - 40);
+        double winH = Math.min(720, vb.getHeight() - 40);
+
+        Scene scene = new Scene(shell, winW, winH);
         scene.setFill(Color.TRANSPARENT);
         var css = getClass().getResource("kano.css");
         if (css != null) scene.getStylesheets().add(css.toExternalForm());
@@ -194,8 +200,12 @@ public class MainApp extends Application {
         if (iconUrl == null) iconUrl = getClass().getResource("king-bg.png");
         if (iconUrl != null) stage.getIcons().add(new Image(iconUrl.toExternalForm()));
         stage.setScene(scene);
-        stage.setMinWidth(960);
-        stage.setMinHeight(600);
+        stage.setMinWidth(Math.min(960, vb.getWidth() - 40));
+        stage.setMinHeight(Math.min(600, vb.getHeight() - 40));
+        stage.setWidth(winW);
+        stage.setHeight(winH);
+        stage.setX(vb.getMinX() + (vb.getWidth() - winW) / 2);
+        stage.setY(vb.getMinY() + (vb.getHeight() - winH) / 2);
         stage.show();
 
         applyTheme();
@@ -703,6 +713,15 @@ public class MainApp extends Application {
         return card;
     }
 
+    /** A consistent page header: a small accent eyebrow over the page title (matches the Home hero). */
+    private VBox pageHeader(String eyebrow, String title) {
+        Label e = new Label(eyebrow);
+        e.getStyleClass().add("page-eyebrow");
+        Label t = new Label(title);
+        t.getStyleClass().add("page-title");
+        return new VBox(1, e, t);
+    }
+
     private Region homeCard(String icon, String title, String desc, Runnable action) {
         Label ic = new Label(icon);
         ic.getStyleClass().add("icon-glyph");
@@ -725,8 +744,7 @@ public class MainApp extends Application {
         VBox page = new VBox(18);
         page.getStyleClass().add("content");
 
-        Label title = new Label("Instance Manager");
-        title.getStyleClass().add("page-title");
+        VBox title = pageHeader("YOUR GAMES", "Instances");
         Region grow = new Region();
         HBox.setHgrow(grow, Priority.ALWAYS);
         Button create = new Button("Create Instance");
@@ -1749,12 +1767,11 @@ public class MainApp extends Application {
         selectNav(navByName.get("Library"));
         VBox page = new VBox(14);
         page.getStyleClass().add("content");
-        Label title = new Label("Library — Installed Mods");
-        title.getStyleClass().add("page-title");
+        VBox title = pageHeader("INSTALLED CONTENT", "Library");
 
         var insts = instanceManager == null ? List.<Instance>of() : instanceManager.list();
         if (insts.isEmpty()) {
-            Label none = new Label("No instances yet.");
+            Label none = new Label("No instances yet — create one to start installing mods.");
             none.getStyleClass().add("muted");
             page.getChildren().addAll(title, none);
             content.getChildren().setAll(page);
@@ -2344,8 +2361,7 @@ public class MainApp extends Application {
         selectNav(navByName.get("Browse Mods"));
         VBox page = new VBox(14);
         page.getStyleClass().add("content");
-        Label title = new Label("Browse Content");
-        title.getStyleClass().add("page-title");
+        VBox title = pageHeader("DISCOVER", "Browse Content");
 
         var insts = instanceManager == null ? List.<Instance>of() : instanceManager.list();
         if (insts.isEmpty()) {
@@ -3168,8 +3184,7 @@ public class MainApp extends Application {
         selectNav(navByName.get("Settings"));
         VBox page = new VBox(12);
         page.getStyleClass().add("content");
-        Label t = new Label("Settings");
-        t.getStyleClass().add("page-title");
+        VBox t = pageHeader("LAUNCHER", "Settings");
         Label cid = new Label("Client ID: " + (clientId != null ? clientId : "not set"));
         cid.getStyleClass().add("muted");
         Label dir = new Label("Data folder: " + resolveDataDir());
@@ -3384,11 +3399,10 @@ public class MainApp extends Application {
     private void simplePage(String title, String sub) {
         VBox page = new VBox(12);
         page.getStyleClass().add("content");
-        Label t = new Label(title);
-        t.getStyleClass().add("page-title");
         Label s = new Label(sub);
         s.getStyleClass().add("muted");
-        page.getChildren().addAll(t, s);
+        s.setWrapText(true);
+        page.getChildren().addAll(pageHeader(title.toUpperCase(java.util.Locale.ROOT), title), s);
         content.getChildren().setAll(page);
     }
 
@@ -3397,8 +3411,7 @@ public class MainApp extends Application {
     private void showAccounts() {
         VBox page = new VBox(16);
         page.getStyleClass().add("content");
-        Label t = new Label("Accounts");
-        t.getStyleClass().add("page-title");
+        VBox t = pageHeader("WHO'S PLAYING", "Accounts");
 
         VBox list = new VBox(8);
         Runnable refresh = () -> { populateAccounts(list); if (accountChip != null) accountChip.setText(accountLabel()); refreshAvatarBar(); };

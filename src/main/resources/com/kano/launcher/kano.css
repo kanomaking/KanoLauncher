@@ -228,6 +228,7 @@
 .palette-label { -fx-text-fill: #E0E0E0; -fx-font-size: 14px; }
 .palette-row-active .palette-label { -fx-text-fill: #FFFFFF; }
 .page-title { -fx-text-fill: -kano-text; -fx-font-size: 29px; -fx-font-weight: bold; }
+.page-eyebrow { -fx-text-fill: -kano-accent-bright; -fx-font-size: 11px; -fx-font-weight: bold; }
 .muted { -fx-text-fill: -kano-text-mute; -fx-font-size: 13px; }
 
 /* ---- buttons ---- */
