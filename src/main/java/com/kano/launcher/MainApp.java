@@ -997,6 +997,13 @@ public class MainApp extends Application {
         hExport.setOnAction(e -> exportInstance(inst));
         HBox actionRow = new HBox(10, hOpen, hClone, hExport);
         actionRow.setAlignment(Pos.CENTER_LEFT);
+        // Offer a one-click switch to NeoForge on Forge instances that are performance-starved.
+        if (inst.loader() == Loader.FORGE && ForgeVersions.neoForgePreferred(inst.version())) {
+            Button conv = new Button("⇪ Convert to NeoForge");
+            conv.getStyleClass().add("btn-update");
+            conv.setOnAction(e -> convertToNeoForge(inst));
+            actionRow.getChildren().add(conv);
+        }
 
         // ---- mod-profile switches: quick on/off without touching individual mods ----
         boolean baseOn = allModsDisabled(inst);
@@ -2692,6 +2699,37 @@ public class MainApp extends Application {
             t.setDaemon(true);
             t.start();
         }
+    }
+
+    private void convertToNeoForge(Instance inst) {
+        Alert c = new Alert(Alert.AlertType.CONFIRMATION,
+                "Switch “" + inst.name() + "” from Forge to NeoForge?\n\n"
+                + "NeoForge has the performance mods Forge lacks on " + inst.version() + ". Your worlds and "
+                + "settings stay. Existing mods carry over, but Forge-only jars may need replacing — "
+                + "reinstall the Performance Pack afterwards.",
+                ButtonType.OK, ButtonType.CANCEL);
+        c.setHeaderText(null);
+        styleDialog(c);
+        if (c.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+        Thread t = new Thread(() -> {
+            try {
+                if (ForgeVersions.latestNeoForge(inst.version()) == null) {
+                    Platform.runLater(() -> alert(Alert.AlertType.INFORMATION, "No NeoForge build",
+                            "NeoForge doesn’t have a build for " + inst.version() + " yet."));
+                    return;
+                }
+                instanceManager.update(inst.withLoader(Loader.NEOFORGE));
+                Platform.runLater(() -> {
+                    showInstanceDetail(currentInstance(inst));
+                    alert(Alert.AlertType.INFORMATION, "Converted",
+                            inst.name() + " is now a NeoForge instance.");
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Convert failed", String.valueOf(ex.getMessage())));
+            }
+        }, "convert-neoforge");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void exportInstance(Instance inst) {

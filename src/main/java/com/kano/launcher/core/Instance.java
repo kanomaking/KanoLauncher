@@ -65,6 +65,10 @@ public record Instance(
         return new Instance(name, version, loader, dirName, createdEpoch, lastPlayedEpoch, ramMb, iconKey, width, height, fullscreen, jvmArgs, newGroup);
     }
 
+    public Instance withLoader(Loader newLoader) {
+        return new Instance(name, version, newLoader, dirName, createdEpoch, lastPlayedEpoch, ramMb, iconKey, width, height, fullscreen, jvmArgs, group);
+    }
+
     /** Apply the editable settings block in one go. */
     public Instance withSettings(String name, int ramMb, int width, int height, boolean fullscreen, String jvmArgs, String group) {
         return new Instance(name, version, loader, dirName, createdEpoch, lastPlayedEpoch, ramMb, iconKey, width, height, fullscreen, jvmArgs, group);
