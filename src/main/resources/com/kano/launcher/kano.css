@@ -241,6 +241,26 @@
 .scroll-pane, .scroll-pane > .viewport { -fx-background-color: transparent; }
 .scroll-pane > .scroll-bar:vertical { -fx-background-color: transparent; }
 
+/* category chips + about-page body */
+.chip {
+    -fx-background-color: #1a0a0c;
+    -fx-text-fill: #C0C0C0;
+    -fx-border-color: rgba(211,47,47,0.5);
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 3 10 3 10;
+    -fx-font-size: 11px;
+}
+.about-text {
+    -fx-control-inner-background: #0c0d12;
+    -fx-background-color: #0c0d12;
+    -fx-text-fill: #cfcfcf;
+    -fx-font-size: 13px;
+    -fx-border-color: rgba(211,47,47,0.4);
+    -fx-border-radius: 8;
+}
+.about-text .content { -fx-background-color: #0c0d12; }
+
 /* bottom stats bar */
 .stats-bar {
     -fx-padding: 8 18 10 22;

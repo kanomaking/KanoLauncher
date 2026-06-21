@@ -15,17 +15,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Minimal Modrinth API v2 client: search projects and list compatible versions, filtered by the
- * instance's exact Minecraft version + loader. Sends the required descriptive User-Agent.
+ * Modrinth API v2 client: search (sortable, paginated), project details, and compatible versions —
+ * filtered by the instance's exact Minecraft version (+ loader for mods). Sends the required UA.
  */
 public final class ModrinthClient {
 
     private static final String API = "https://api.modrinth.com/v2/";
-    // Modrinth requires a unique, contactable User-Agent.
     private static final String UA = "ChaosCraft/KanoLauncher/1.0 (kanomaking.em@gmail.com)";
 
     public record Hit(String projectId, String slug, String title, String description,
                       int downloads, String iconUrl, String projectType) {}
+    public record SearchResult(List<Hit> hits, int totalHits) {}
+    public record ProjectDetail(String title, String summary, String body, int downloads, int followers,
+                                List<String> categories, String iconUrl, String sourceUrl, String slug) {}
     public record ModFile(String url, String filename, boolean primary) {}
     public record Dep(String projectId, String type) {}
     public record ModVersion(String id, String name, List<ModFile> files, List<Dep> dependencies) {}
@@ -33,28 +35,41 @@ public final class ModrinthClient {
     private final HttpClient http = HttpClient.newHttpClient();
     private final Gson gson = new Gson();
 
-    /** Search projects compatible with the given version+loader. projectType e.g. "mod", "modpack", "shader". */
-    public List<Hit> search(String query, String gameVersion, String loader, String projectType) throws Exception {
+    /**
+     * @param sort  one of: relevance, downloads, follows, newest, updated
+     * @param loader pass null for loader-agnostic types (resource packs, shaders)
+     */
+    public SearchResult search(String query, String gameVersion, String loader, String projectType,
+                               String sort, int offset, int limit) throws Exception {
         String facets = "[[\"project_type:" + projectType + "\"],[\"versions:" + gameVersion + "\"]"
                 + (loader != null && !loader.isBlank() ? ",[\"categories:" + loader + "\"]" : "") + "]";
-        // No query yet → show the most-downloaded mods (a browsable list, like Modrinth's launcher).
-        String index = (query == null || query.isBlank()) ? "downloads" : "relevance";
-        String url = API + "search?limit=40&index=" + index
+        String url = API + "search?limit=" + limit + "&offset=" + offset
+                + "&index=" + sort
                 + "&query=" + enc(query == null ? "" : query)
                 + "&facets=" + enc(facets);
         JsonObject root = gson.fromJson(get(url), JsonObject.class);
         List<Hit> out = new ArrayList<>();
         for (JsonElement el : root.getAsJsonArray("hits")) {
             JsonObject h = el.getAsJsonObject();
-            out.add(new Hit(
-                    str(h, "project_id"), str(h, "slug"), str(h, "title"), str(h, "description"),
+            out.add(new Hit(str(h, "project_id"), str(h, "slug"), str(h, "title"), str(h, "description"),
                     h.has("downloads") ? h.get("downloads").getAsInt() : 0,
                     str(h, "icon_url"), str(h, "project_type")));
         }
-        return out;
+        int total = root.has("total_hits") ? root.get("total_hits").getAsInt() : out.size();
+        return new SearchResult(out, total);
     }
 
-    /** Compatible versions for a project, newest first. */
+    public ProjectDetail project(String idOrSlug) throws Exception {
+        JsonObject p = gson.fromJson(get(API + "project/" + idOrSlug), JsonObject.class);
+        List<String> cats = new ArrayList<>();
+        if (p.has("categories")) for (JsonElement c : p.getAsJsonArray("categories")) cats.add(c.getAsString());
+        return new ProjectDetail(
+                str(p, "title"), str(p, "description"), str(p, "body"),
+                p.has("downloads") ? p.get("downloads").getAsInt() : 0,
+                p.has("followers") ? p.get("followers").getAsInt() : 0,
+                cats, str(p, "icon_url"), str(p, "source_url"), str(p, "slug"));
+    }
+
     public List<ModVersion> versions(String idOrSlug, String gameVersion, String loader) throws Exception {
         String url = API + "project/" + idOrSlug + "/version"
                 + "?game_versions=" + enc("[\"" + gameVersion + "\"]")

@@ -868,17 +868,23 @@ public class MainApp extends Application {
 
     // ---- Browse Mods (Modrinth) ----
 
+    private StringConverter<Instance> instanceConverter() {
+        return new StringConverter<>() {
+            public String toString(Instance i) { return i == null ? "" : i.name() + " (" + i.version() + ")"; }
+            public Instance fromString(String s) { return null; }
+        };
+    }
+
     private void showBrowse() {
         selectNav(navByName.get("Browse Modpacks"));
         VBox page = new VBox(14);
         page.getStyleClass().add("content");
-        Label title = new Label("Browse Mods");
+        Label title = new Label("Browse Content");
         title.getStyleClass().add("page-title");
 
-        var fabricInsts = instanceManager == null ? List.<Instance>of()
-                : instanceManager.list().stream().filter(i -> i.loader() == Loader.FABRIC).toList();
-        if (fabricInsts.isEmpty()) {
-            Label none = new Label("Create a Fabric instance first — mods install into a Fabric instance.");
+        var insts = instanceManager == null ? List.<Instance>of() : instanceManager.list();
+        if (insts.isEmpty()) {
+            Label none = new Label("Create an instance first — content installs into an instance.");
             none.getStyleClass().add("muted");
             page.getChildren().addAll(title, none);
             content.getChildren().setAll(page);
@@ -886,78 +892,135 @@ public class MainApp extends Application {
         }
 
         ChoiceBox<Instance> instPick = new ChoiceBox<>();
-        instPick.getItems().addAll(fabricInsts);
-        instPick.setConverter(new StringConverter<>() {
-            public String toString(Instance i) { return i == null ? "" : i.name() + " (" + i.version() + ")"; }
-            public Instance fromString(String s) { return null; }
-        });
+        instPick.getItems().addAll(insts);
+        instPick.setConverter(instanceConverter());
         instPick.getSelectionModel().selectFirst();
 
+        ChoiceBox<String> typeBox = new ChoiceBox<>();
+        typeBox.getItems().addAll("Mods", "Modpacks", "Resource Packs", "Shaders", "Data Packs");
+        typeBox.getSelectionModel().selectFirst();
+
+        ChoiceBox<String> sortBox = new ChoiceBox<>();
+        sortBox.getItems().addAll("Most downloads", "Relevance", "Most followers", "Newest", "Recently updated");
+        sortBox.getSelectionModel().selectFirst();
+
         TextField q = new TextField();
-        q.setPromptText("Search mods — sodium, jei, sodium…");
+        q.setPromptText("Search…");
         HBox.setHgrow(q, Priority.ALWAYS);
-        Button searchBtn = new Button("Search");
-        searchBtn.getStyleClass().add("btn-filled");
 
         VBox results = new VBox(10);
-        ScrollPane scroll = new ScrollPane(results);
+        Button loadMore = new Button("Load more");
+        loadMore.getStyleClass().add("btn-outline");
+        loadMore.setVisible(false);
+        loadMore.setManaged(false);
+        VBox resultsWrap = new VBox(12, results, loadMore);
+        ScrollPane scroll = new ScrollPane(resultsWrap);
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("scroll-pane");
         VBox.setVgrow(scroll, Priority.ALWAYS);
 
-        Runnable doSearch = () -> runModSearch(instPick.getValue(), q.getText(), results);
-        searchBtn.setOnAction(e -> doSearch.run());
-        q.setOnAction(e -> doSearch.run());
+        int[] offset = {0};
+        java.util.function.Consumer<Boolean> page2 = reset -> {
+            Instance inst = instPick.getValue();
+            if (inst == null) return;
+            String type = typeKey(typeBox.getValue());
+            String sort = sortKey(sortBox.getValue());
+            String loaderFacet = ("mod".equals(type) || "modpack".equals(type)) ? "fabric" : null;
+            String query = q.getText();
+            if (reset) { offset[0] = 0; results.getChildren().clear(); }
+            int startOffset = offset[0];
+            loadMore.setDisable(true);
+            loadMore.setText("Loading…");
+            Thread t = new Thread(() -> {
+                try {
+                    var res = new ModrinthClient().search(query, inst.version(), loaderFacet, type, sort, startOffset, 20);
+                    Platform.runLater(() -> {
+                        if (reset && res.hits().isEmpty()) {
+                            Label none = new Label("No compatible " + typeBox.getValue().toLowerCase() + " found.");
+                            none.getStyleClass().add("muted");
+                            results.getChildren().add(none);
+                        }
+                        for (var h : res.hits()) results.getChildren().add(modCard(h, inst, type));
+                        offset[0] = startOffset + res.hits().size();
+                        boolean more = offset[0] < res.totalHits() && !res.hits().isEmpty();
+                        loadMore.setVisible(more);
+                        loadMore.setManaged(more);
+                        loadMore.setDisable(false);
+                        loadMore.setText("Load more  (" + offset[0] + " / " + res.totalHits() + ")");
+                    });
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        if (reset) {
+                            Label err = new Label("Search failed: " + ex.getMessage());
+                            err.getStyleClass().add("muted");
+                            results.getChildren().setAll(err);
+                        }
+                        loadMore.setDisable(false);
+                        loadMore.setText("Load more");
+                    });
+                }
+            }, "mod-search");
+            t.setDaemon(true);
+            t.start();
+        };
 
-        // Search-as-you-type, debounced so we don't hammer the API on every keystroke.
+        loadMore.setOnAction(e -> page2.accept(false));
         PauseTransition debounce = new PauseTransition(Duration.millis(350));
-        debounce.setOnFinished(e -> doSearch.run());
+        debounce.setOnFinished(e -> page2.accept(true));
         q.textProperty().addListener((o, a, b) -> debounce.playFromStart());
-        // Re-query when the target instance (version) changes.
-        instPick.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> doSearch.run());
+        instPick.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> page2.accept(true));
+        typeBox.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> page2.accept(true));
+        sortBox.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> page2.accept(true));
 
         Button perfBtn = new Button("⚡ Performance Pack");
         perfBtn.getStyleClass().add("btn-outline");
         perfBtn.setOnAction(e -> installPerfPack(instPick.getValue(), perfBtn));
 
-        HBox bar = new HBox(10, instPick, q, searchBtn, perfBtn);
-        bar.setAlignment(Pos.CENTER_LEFT);
-        page.getChildren().addAll(title, bar, scroll);
+        Label typeLbl = new Label("Type:");
+        typeLbl.getStyleClass().add("card-sub");
+        Label sortLbl = new Label("Sort:");
+        sortLbl.getStyleClass().add("card-sub");
+        HBox bar1 = new HBox(10, instPick, q);
+        bar1.setAlignment(Pos.CENTER_LEFT);
+        HBox bar2 = new HBox(10, typeLbl, typeBox, sortLbl, sortBox, perfBtn);
+        bar2.setAlignment(Pos.CENTER_LEFT);
+        page.getChildren().addAll(title, bar1, bar2, scroll);
         content.getChildren().setAll(page);
 
-        doSearch.run(); // show the popular-mods list immediately
+        page2.accept(true);
     }
 
-    private void runModSearch(Instance inst, String query, VBox results) {
-        Label loading = new Label("Searching…");
-        loading.getStyleClass().add("muted");
-        results.getChildren().setAll(loading);
-        Thread t = new Thread(() -> {
-            try {
-                var hits = new ModrinthClient().search(query, inst.version(), "fabric", "mod");
-                Platform.runLater(() -> {
-                    results.getChildren().clear();
-                    if (hits.isEmpty()) {
-                        Label none = new Label("No compatible mods found.");
-                        none.getStyleClass().add("muted");
-                        results.getChildren().add(none);
-                    } else {
-                        for (var h : hits) results.getChildren().add(modCard(h, inst));
-                    }
-                });
-            } catch (Exception ex) {
-                Platform.runLater(() -> {
-                    Label err = new Label("Search failed: " + ex.getMessage());
-                    err.getStyleClass().add("muted");
-                    results.getChildren().setAll(err);
-                });
-            }
-        }, "mod-search");
-        t.setDaemon(true);
-        t.start();
+    private static String sortKey(String label) {
+        return switch (label) {
+            case "Relevance" -> "relevance";
+            case "Most followers" -> "follows";
+            case "Newest" -> "newest";
+            case "Recently updated" -> "updated";
+            default -> "downloads";
+        };
     }
 
-    private Region modCard(ModrinthClient.Hit hit, Instance inst) {
+    private static String typeKey(String label) {
+        return switch (label) {
+            case "Modpacks" -> "modpack";
+            case "Resource Packs" -> "resourcepack";
+            case "Shaders" -> "shader";
+            case "Data Packs" -> "datapack";
+            default -> "mod";
+        };
+    }
+
+    /** Target folder for a content type, or null if single-file install isn't supported. */
+    private static String typeFolder(String type) {
+        return switch (type) {
+            case "mod" -> "mods";
+            case "resourcepack" -> "resourcepacks";
+            case "shader" -> "shaderpacks";
+            default -> null; // modpack / datapack need special handling
+        };
+    }
+
+    private Region modCard(ModrinthClient.Hit hit, Instance inst, String type) {
         Label name = new Label(hit.title());
         name.getStyleClass().add("card-title-sm");
         Label desc = new Label(hit.description());
@@ -970,12 +1033,14 @@ public class MainApp extends Application {
 
         Button install = new Button("Install");
         install.getStyleClass().add("btn-outline");
-        install.setOnAction(e -> installMod(hit, inst, install));
+        install.setOnAction(e -> installMod(hit, inst, type, install));
 
         HBox row = new HBox(14, modIcon(hit.iconUrl()), info, install);
         row.setAlignment(Pos.CENTER_LEFT);
         StackPane card = new StackPane(row);
         card.getStyleClass().add("card");
+        card.setStyle("-fx-cursor: hand;");
+        card.setOnMouseClicked(e -> showModDetail(hit, inst, type));
         return card;
     }
 
@@ -1030,14 +1095,21 @@ public class MainApp extends Application {
         });
     }
 
-    private void installMod(ModrinthClient.Hit hit, Instance inst, Button install) {
+    private void installMod(ModrinthClient.Hit hit, Instance inst, String type, Button install) {
+        String folder = typeFolder(type);
+        if (folder == null) {
+            alert(Alert.AlertType.INFORMATION, "Not supported yet",
+                    "Installing " + type + "s isn't supported yet — only mods, resource packs, and shaders.");
+            return;
+        }
+        String depLoader = "mod".equals(type) ? "fabric" : null;
         install.setDisable(true);
         install.setText("Installing…");
         Thread t = new Thread(() -> {
             try {
-                Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
+                Path dir = instanceManager.instanceDir(inst).resolve(folder);
                 int n = ModInstaller.install(new ModrinthClient(), hit.projectId(), inst.version(),
-                        "fabric", modsDir, msg -> {});
+                        depLoader, dir, msg -> {});
                 Platform.runLater(() -> {
                     install.setText("Installed ✓");
                     alert(Alert.AlertType.INFORMATION, "Installed",
@@ -1090,6 +1162,107 @@ public class MainApp extends Application {
         if (n >= 1_000_000) return String.format("%.1fM", n / 1_000_000.0);
         if (n >= 1_000) return String.format("%.0fK", n / 1_000.0);
         return String.valueOf(n);
+    }
+
+    // ---- mod "about" page ----
+
+    private void showModDetail(ModrinthClient.Hit hit, Instance inst, String type) {
+        VBox page = new VBox(16);
+        page.getStyleClass().add("content");
+        Button back = new Button("←  Back");
+        back.getStyleClass().add("nav-button");
+        back.setOnAction(e -> showBrowse());
+        Label loading = new Label("Loading " + hit.title() + "…");
+        loading.getStyleClass().add("muted");
+        page.getChildren().addAll(back, loading);
+        content.getChildren().setAll(page);
+
+        Thread t = new Thread(() -> {
+            try {
+                var pd = new ModrinthClient().project(hit.projectId());
+                Platform.runLater(() -> renderModDetail(pd, hit, inst, type));
+            } catch (Exception ex) {
+                Platform.runLater(() -> loading.setText("Failed to load: " + ex.getMessage()));
+            }
+        }, "mod-detail");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void renderModDetail(ModrinthClient.ProjectDetail pd, ModrinthClient.Hit hit, Instance inst, String type) {
+        VBox page = new VBox(14);
+        page.getStyleClass().add("content");
+        Button back = new Button("←  Back");
+        back.getStyleClass().add("nav-button");
+        back.setOnAction(e -> showBrowse());
+
+        StackPane icon = new StackPane();
+        icon.getStyleClass().add("mod-icon");
+        icon.setMinSize(72, 72);
+        icon.setMaxSize(72, 72);
+        Label ph = new Label("❖");
+        ph.getStyleClass().add("icon-glyph");
+        icon.getChildren().add(ph);
+        if (!pd.iconUrl().isBlank()) {
+            ImageView iv = new ImageView();
+            iv.setFitWidth(72);
+            iv.setFitHeight(72);
+            Rectangle c = new Rectangle(72, 72);
+            c.setArcWidth(14);
+            c.setArcHeight(14);
+            iv.setClip(c);
+            icon.getChildren().add(iv);
+            loadIcon(iv, pd.iconUrl());
+        }
+
+        Label nm = new Label(pd.title());
+        nm.getStyleClass().add("page-title");
+        Label summary = new Label(pd.summary());
+        summary.getStyleClass().add("card-meta");
+        summary.setWrapText(true);
+        Label statsL = new Label("⬇ " + formatDownloads(pd.downloads()) + " downloads     ♥ "
+                + formatDownloads(pd.followers()) + " followers");
+        statsL.getStyleClass().add("card-downloads");
+        VBox titleBox = new VBox(6, nm, summary, statsL);
+        HBox header = new HBox(16, icon, titleBox);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        FlowPane chips = new FlowPane(6, 6);
+        for (String c : pd.categories()) {
+            Label chip = new Label(c);
+            chip.getStyleClass().add("chip");
+            chips.getChildren().add(chip);
+        }
+
+        Button install = new Button("Install to " + inst.name());
+        install.getStyleClass().add("btn-filled");
+        install.setOnAction(e -> installMod(hit, inst, type, install));
+        Button open = new Button("Open on Modrinth");
+        open.getStyleClass().add("btn-outline");
+        String slug = pd.slug().isBlank() ? hit.slug() : pd.slug();
+        open.setOnAction(e -> getHostServices().showDocument("https://modrinth.com/" + type + "/" + slug));
+        HBox btns = new HBox(10, install, open);
+
+        TextArea body = new TextArea(stripMarkdown(pd.body()));
+        body.setEditable(false);
+        body.setWrapText(true);
+        body.getStyleClass().add("about-text");
+        VBox.setVgrow(body, Priority.ALWAYS);
+
+        page.getChildren().addAll(back, header, chips, btns, body);
+        content.getChildren().setAll(page);
+    }
+
+    /** Rough markdown → plain text so the description body is readable in a TextArea. */
+    private static String stripMarkdown(String md) {
+        if (md == null || md.isBlank()) return "(No description provided.)";
+        return md.replaceAll("!\\[[^\\]]*\\]\\([^)]*\\)", "")     // images
+                .replaceAll("\\[([^\\]]*)\\]\\([^)]*\\)", "$1")    // links -> text
+                .replaceAll("<[^>]+>", "")                          // html tags
+                .replaceAll("(?m)^[#>\\-\\*\\s]{1,}", "")           // leading md markers
+                .replaceAll("[`*_~|]", "")                          // inline md symbols
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
     }
 
     private void showSettings() {
