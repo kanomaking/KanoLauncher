@@ -1,4 +1,6 @@
 # Build output
+build/
+.gradle/
 login-test/out/
 **/*.class
 

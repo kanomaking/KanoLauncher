@@ -1,0 +1,78 @@
+/* KanoLauncher theme — red-heavy on black, silver accents */
+
+.root {
+    -fx-font-family: "Segoe UI", "Inter", sans-serif;
+}
+
+.root-pane {
+    -fx-background-color: #0A0A0A;
+}
+
+.sidebar {
+    -fx-background-color: #050505;
+    -fx-border-color: #1A1A1A;
+    -fx-border-width: 0 1 0 0;
+}
+
+.brand {
+    -fx-text-fill: #D32F2F;
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 0 6;
+}
+
+.nav-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #C0C0C0;
+    -fx-font-size: 14px;
+    -fx-alignment: center-left;
+    -fx-padding: 10 14 10 14;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+
+.nav-button:hover {
+    -fx-background-color: #1A0707;
+    -fx-text-fill: #FFFFFF;
+}
+
+.nav-button:armed,
+.nav-button:focused {
+    -fx-background-color: #B71C1C;
+    -fx-text-fill: #FFFFFF;
+}
+
+.content {
+    -fx-background-color: #0A0A0A;
+}
+
+.page-title {
+    -fx-text-fill: #C0C0C0;
+    -fx-font-size: 26px;
+    -fx-font-weight: bold;
+}
+
+.muted {
+    -fx-text-fill: #9E9E9E;
+    -fx-font-size: 13px;
+}
+
+.play-button {
+    -fx-background-color: #D32F2F;
+    -fx-text-fill: #FFFFFF;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-padding: 12 48 12 48;
+    -fx-background-radius: 8;
+    -fx-cursor: hand;
+}
+
+.play-button:hover {
+    -fx-background-color: #E53935;
+}
+
+.play-button:disabled {
+    -fx-background-color: #3A1414;
+    -fx-text-fill: #7A7A7A;
+    -fx-cursor: default;
+}
