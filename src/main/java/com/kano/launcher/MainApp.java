@@ -1524,35 +1524,55 @@ public class MainApp extends Application {
         styleDialog(d);
 
         if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
-            try {
-                Loader chosen = loader.getValue();
-                String version = ver.getValue();
-                // Auto-route Forge → NeoForge when Forge would be performance-starved (1.20.2+).
-                if (chosen == Loader.FORGE && ForgeVersions.neoForgePreferred(version)
-                        && (config == null || config.autoNeoForge())) {
-                    ButtonType useNeo = new ButtonType("Use NeoForge (recommended)",
-                            javafx.scene.control.ButtonBar.ButtonData.YES);
-                    ButtonType keepForge = new ButtonType("Keep Forge",
-                            javafx.scene.control.ButtonBar.ButtonData.NO);
-                    Alert a = new Alert(Alert.AlertType.CONFIRMATION,
-                            "On " + version + ", Forge is missing most performance mods — Embeddium, Lithium, "
-                            + "C2ME and others moved to NeoForge after 1.20.1. NeoForge runs the same mods and "
-                            + "gets far higher FPS.\n\nCreate this as NeoForge instead?",
-                            useNeo, keepForge, ButtonType.CANCEL);
-                    a.setHeaderText("NeoForge is faster for " + version);
-                    styleDialog(a);
-                    ButtonType res = a.showAndWait().orElse(ButtonType.CANCEL);
-                    if (res == ButtonType.CANCEL) return;
-                    if (res == useNeo) chosen = Loader.NEOFORGE;
-                }
-                String nm = name.getText().isBlank() ? (chosen.display() + " " + version) : name.getText();
-                Instance created = instanceManager.create(nm, version, chosen, group.getText().trim());
-                if (config != null && config.defaultRamMb() != 4096)
-                    instanceManager.update(created.withRam(config.defaultRamMb()));
-                showInstances();
-            } catch (Exception ex) {
-                alert(Alert.AlertType.ERROR, "Create failed", ex.getMessage());
+            Loader chosen = loader.getValue();
+            String version = ver.getValue();
+            String typedName = name.getText().isBlank() ? null : name.getText();
+            String grp = group.getText().trim();
+            // Force Forge → NeoForge on 1.20.2+ (Forge has no performance mods there — they moved to
+            // NeoForge). We verify NeoForge actually has a build off-thread, then create.
+            boolean route = chosen == Loader.FORGE && ForgeVersions.neoForgePreferred(version)
+                    && (config == null || config.autoNeoForge());
+            if (!route) {
+                createInstanceFinal(chosen, version, typedName, grp, null);
+                return;
             }
+            Thread t = new Thread(() -> {
+                Loader fl;
+                String note;
+                try {
+                    if (ForgeVersions.latestNeoForge(version) != null) {
+                        fl = Loader.NEOFORGE;
+                        note = "Forge has no performance mods on " + version + " — created as NeoForge instead "
+                                + "(same Forge-family mods, far higher FPS).";
+                    } else {
+                        fl = Loader.FORGE;
+                        note = "Heads up: Forge on " + version + " has almost no performance mods, and NeoForge "
+                                + "doesn't have a build for this version yet.";
+                    }
+                } catch (Exception e) {
+                    fl = Loader.NEOFORGE;
+                    note = "Created as NeoForge (recommended for " + version + ").";
+                }
+                Loader finalLoader = fl;
+                String finalNote = note;
+                Platform.runLater(() -> createInstanceFinal(finalLoader, version, typedName, grp, finalNote));
+            }, "create-route");
+            t.setDaemon(true);
+            t.start();
+        }
+    }
+
+    /** Create an instance (applying the default-RAM override), refresh, and show an optional note. */
+    private void createInstanceFinal(Loader loader, String version, String typedName, String group, String note) {
+        try {
+            String nm = (typedName == null || typedName.isBlank()) ? (loader.display() + " " + version) : typedName;
+            Instance created = instanceManager.create(nm, version, loader, group);
+            if (config != null && config.defaultRamMb() != 4096)
+                instanceManager.update(created.withRam(config.defaultRamMb()));
+            showInstances();
+            if (note != null) alert(Alert.AlertType.INFORMATION, "Using " + loader.display(), note);
+        } catch (Exception ex) {
+            alert(Alert.AlertType.ERROR, "Create failed", String.valueOf(ex.getMessage()));
         }
     }
 
@@ -3148,7 +3168,7 @@ public class MainApp extends Application {
         CheckBox confChk = new CheckBox("Confirm before deleting an instance");
         confChk.setSelected(config == null || config.confirmDelete());
         confChk.setOnAction(e -> { if (config != null) config.setConfirmDelete(confChk.isSelected()); });
-        CheckBox neoChk = new CheckBox("Suggest NeoForge when Forge would be slower (1.20.2+)");
+        CheckBox neoChk = new CheckBox("Auto-create as NeoForge instead of Forge on 1.20.2+ (Forge has no perf mods there)");
         neoChk.setSelected(config == null || config.autoNeoForge());
         neoChk.setOnAction(e -> { if (config != null) config.setAutoNeoForge(neoChk.isSelected()); });
 
