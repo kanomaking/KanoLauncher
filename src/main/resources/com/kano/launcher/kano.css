@@ -189,7 +189,10 @@
     -fx-cursor: hand;
     -fx-effect: dropshadow(gaussian, -kano-glow, 16, 0.25, 0, 0);
 }
-.btn-filled:hover { -fx-background-color: -kano-accent-bright; }
+.btn-filled:hover {
+    -fx-background-color: -kano-accent-bright;
+    -fx-effect: dropshadow(gaussian, -kano-glow, 22, 0.4, 0, 0);
+}
 
 /* gold "updates available" button — matches the download-count gold, pops against the red theme */
 .btn-update {
@@ -318,6 +321,11 @@
 .card-featured {
     -fx-border-color: -kano-accent-bright;
     -fx-effect: dropshadow(gaussian, -kano-glow, 26, 0.28, 0, 0);
+}
+.card:hover {
+    -fx-border-color: -kano-accent-bright;
+    -fx-effect: dropshadow(gaussian, -kano-glow, 24, 0.34, 0, 0);
+    -fx-translate-y: -1;
 }
 .card-title { -fx-text-fill: #FFFFFF; -fx-font-size: 22px; -fx-font-weight: bold; }
 .card-title-sm { -fx-text-fill: #FFFFFF; -fx-font-size: 16px; -fx-font-weight: bold; }

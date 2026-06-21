@@ -303,7 +303,7 @@ The launcher is a working JavaFX app (`gradlew run`). Implemented and verified:
 
 **Customization:** changeable launcher name; **full accent theming** (every accent color — solid, glow, border, tint — flows from looked-up CSS vars set live by `applyTheme()`); 5 presets + **custom color picker**; **background image upload + size + visibility sliders**; Ctrl+K command palette; themed dialogs; stats bar (worlds/playtime/launches). Maximize keeps the taskbar visible.
 
-**Other:** self-update banner (GitHub release check, notify-only).
+**Other:** self-update banner (GitHub release check, notify-only). Visual polish: subtle 170ms fade-in on every view swap, card hover-lift (border glow + 1px raise), stronger filled-button hover glow.
 
 **Drafted, NOT yet integrated** (agent-produced, pending): scheduled tasks, live dashboard, packaging (.msi/.deb via jpackage — needs WiX + jmods + icons).
 

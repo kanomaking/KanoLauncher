@@ -161,6 +161,14 @@ public class MainApp extends Application {
         appShell.getStyleClass().add("app-shell");
         StackPane shell = appShell;
 
+        // Subtle fade-in whenever the main view swaps (every show*() does content.setAll).
+        content.getChildren().addListener((javafx.collections.ListChangeListener<Node>) c -> {
+            javafx.animation.FadeTransition ft = new javafx.animation.FadeTransition(Duration.millis(170), content);
+            ft.setFromValue(0.0);
+            ft.setToValue(1.0);
+            ft.play();
+        });
+
         showInstances();
 
         Scene scene = new Scene(shell, 1180, 720);
