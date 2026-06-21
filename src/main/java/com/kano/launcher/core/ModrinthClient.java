@@ -27,7 +27,7 @@ public final class ModrinthClient {
                       int downloads, String iconUrl, String projectType) {}
     public record SearchResult(List<Hit> hits, int totalHits) {}
     public record ProjectDetail(String title, String summary, String body, int downloads, int followers,
-                                List<String> categories, String iconUrl, String sourceUrl, String slug) {}
+                                List<String> categories, String iconUrl, String sourceUrl, String slug, String id) {}
     public record ModFile(String url, String filename, boolean primary) {}
     public record Dep(String projectId, String type) {}
     public record ModVersion(String id, String name, List<ModFile> files, List<Dep> dependencies) {}
@@ -67,7 +67,7 @@ public final class ModrinthClient {
                 str(p, "title"), str(p, "description"), str(p, "body"),
                 p.has("downloads") ? p.get("downloads").getAsInt() : 0,
                 p.has("followers") ? p.get("followers").getAsInt() : 0,
-                cats, str(p, "icon_url"), str(p, "source_url"), str(p, "slug"));
+                cats, str(p, "icon_url"), str(p, "source_url"), str(p, "slug"), str(p, "id"));
     }
 
     public List<ModVersion> versions(String idOrSlug, String gameVersion, String loader) throws Exception {

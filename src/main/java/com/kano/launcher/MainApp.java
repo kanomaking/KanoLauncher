@@ -31,6 +31,9 @@ import javafx.scene.control.Label;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Slider;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
@@ -233,7 +236,7 @@ public class MainApp extends Application {
                 nav("⌂", "Home", this::showHome),
                 nav("▤", "Library", this::showLibrary),
                 nav("◰", "Instances", this::showInstances),
-                nav("❖", "Browse Modpacks", this::showBrowse),
+                nav("❖", "Browse Mods", this::showBrowse),
                 nav("☺", "Skins", this::showSkins),
                 nav("⚙", "Settings", this::showSettings));
         return side;
@@ -274,7 +277,7 @@ public class MainApp extends Application {
         grid.getChildren().addAll(
                 homeCard("◰", "Instances", "Create and launch your games", this::showInstances),
                 homeCard("▤", "Library", "Your installed content", this::showLibrary),
-                homeCard("❖", "Browse Modpacks", "Find mods on Modrinth", this::showBrowse),
+                homeCard("❖", "Browse Mods", "Find mods on Modrinth", this::showBrowse),
                 homeCard("☺", "Skins", "Change your skin", this::showSkins),
                 homeCard("●", "Accounts", "Manage Microsoft accounts", this::showAccounts),
                 homeCard("⚙", "Settings", "Launcher options", this::showSettings));
@@ -497,13 +500,23 @@ public class MainApp extends Application {
         }
 
         // ---- Settings form ----
-        Label setLbl = new Label("Settings");
-        setLbl.getStyleClass().add("card-title-sm");
-
         TextField nameF = new TextField(inst.name());
         nameF.setPrefWidth(280);
-        TextField ramF = new TextField(String.valueOf(inst.ramMb()));
-        ramF.setMaxWidth(120);
+
+        Slider ramSlider = new Slider(1024, 16384, inst.ramMb());
+        ramSlider.setPrefWidth(260);
+        ramSlider.setBlockIncrement(512);
+        ramSlider.setMajorTickUnit(2048);
+        ramSlider.setMinorTickCount(3);
+        ramSlider.setSnapToTicks(true);
+        ramSlider.setShowTickMarks(true);
+        Label ramVal = new Label(inst.ramMb() + " MB");
+        ramVal.getStyleClass().add("card-sub");
+        ramVal.setMinWidth(72);
+        ramSlider.valueProperty().addListener((o, a, b) -> ramVal.setText(snapRam(b.doubleValue()) + " MB"));
+        HBox ramBox = new HBox(10, ramSlider, ramVal);
+        ramBox.setAlignment(Pos.CENTER_LEFT);
+
         TextField widthF = new TextField(inst.width() > 0 ? String.valueOf(inst.width()) : "");
         widthF.setPromptText("default");
         widthF.setMaxWidth(90);
@@ -525,25 +538,17 @@ public class MainApp extends Application {
         saveSettings.setOnAction(e -> {
             try {
                 String nm = nameF.getText().isBlank() ? inst.name() : nameF.getText().trim();
-                int ramMb = Integer.parseInt(ramF.getText().trim());
+                int ramMb = snapRam(ramSlider.getValue());
                 int w = widthF.getText().isBlank() ? 0 : Integer.parseInt(widthF.getText().trim());
                 int h = heightF.getText().isBlank() ? 0 : Integer.parseInt(heightF.getText().trim());
                 instanceManager.update(inst.withSettings(nm, ramMb, w, h, fullF.isSelected(), jvmF.getText().trim()));
                 showInstanceDetail(currentInstance(inst));
             } catch (NumberFormatException nf) {
-                alert(Alert.AlertType.ERROR, "Invalid number", "RAM and resolution must be whole numbers.");
+                alert(Alert.AlertType.ERROR, "Invalid number", "Resolution must be whole numbers.");
             } catch (Exception ex) {
                 alert(Alert.AlertType.ERROR, "Save failed", ex.getMessage());
             }
         });
-
-        VBox settingsBox = new VBox(8,
-                settingRow("Name", nameF),
-                settingRow("RAM (MB)", ramF),
-                settingRow("Resolution", resBox),
-                settingRow("", fullF),
-                settingRow("Extra JVM args", jvmF),
-                saveSettings);
 
         Button del = new Button("Delete Instance");
         del.getStyleClass().add("btn-outline");
@@ -552,19 +557,60 @@ public class MainApp extends Application {
             catch (Exception ex) { alert(Alert.AlertType.ERROR, "Delete failed", ex.getMessage()); }
         });
 
-        VBox bodyBox = new VBox(14, setLbl, profLbl, swatches, settingsBox,
-                contentSection(inst, "Mods", "mods", "Mods"),
-                contentSection(inst, "Resource Packs", "resourcepacks", "Resource Packs"),
-                contentSection(inst, "Shaders", "shaderpacks", "Shaders"),
-                contentSection(inst, "Data Packs", "datapacks", "Data Packs"),
-                new Region(), del);
-        ScrollPane scroll = new ScrollPane(bodyBox);
-        scroll.setFitToWidth(true);
-        scroll.getStyleClass().add("scroll-pane");
-        VBox.setVgrow(scroll, Priority.ALWAYS);
+        VBox settingsContent = new VBox(12, profLbl, swatches,
+                settingRow("Name", nameF),
+                settingRow("RAM", ramBox),
+                settingRow("Resolution", resBox),
+                settingRow("", fullF),
+                settingRow("Extra JVM args", jvmF),
+                saveSettings, new Region(), del);
+        settingsContent.setPadding(new Insets(12));
+        ScrollPane settingsScroll = new ScrollPane(settingsContent);
+        settingsScroll.setFitToWidth(true);
+        settingsScroll.getStyleClass().add("scroll-pane");
 
-        page.getChildren().addAll(header, scroll);
+        TabPane tabs = new TabPane();
+        tabs.getStyleClass().add("kano-tabs");
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabs.getTabs().addAll(
+                contentTab(inst, "Mods", "mods", "Mods"),
+                contentTab(inst, "Resource Packs", "resourcepacks", "Resource Packs"),
+                contentTab(inst, "Shaders", "shaderpacks", "Shaders"),
+                contentTab(inst, "Data Packs", "datapacks", "Data Packs"),
+                tab("Settings", settingsScroll));
+        VBox.setVgrow(tabs, Priority.ALWAYS);
+
+        page.getChildren().addAll(header, tabs);
         content.getChildren().setAll(page);
+    }
+
+    private static int snapRam(double v) {
+        return (int) (Math.round(v / 512.0) * 512);
+    }
+
+    private Tab tab(String title, javafx.scene.Node node) {
+        Tab t = new Tab(title, node);
+        t.setClosable(false);
+        return t;
+    }
+
+    private Tab contentTab(Instance inst, String title, String folder, String browseTypeLabel) {
+        Button add = new Button("+ Add " + title);
+        add.getStyleClass().add("btn-outline");
+        add.setOnAction(e -> showBrowse(inst, browseTypeLabel));
+        Region g = new Region();
+        HBox.setHgrow(g, Priority.ALWAYS);
+        HBox header = new HBox(10, g, add);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox listBox = new VBox(8);
+        populateFolderItems(inst, folder, listBox);
+        ScrollPane sp = new ScrollPane(listBox);
+        sp.setFitToWidth(true);
+        sp.getStyleClass().add("scroll-pane");
+        VBox.setVgrow(sp, Priority.ALWAYS);
+        VBox box = new VBox(10, header, sp);
+        box.setPadding(new Insets(12));
+        return tab(title, box);
     }
 
     private HBox settingRow(String label, javafx.scene.Node control) {
@@ -886,19 +932,33 @@ public class MainApp extends Application {
             return;
         }
         for (Path f : items) {
-            Label name = new Label(f.getFileName().toString());
+            String fn = f.getFileName().toString();
+            boolean disabled = fn.toLowerCase().endsWith(".disabled");
+            String display = disabled ? fn.replaceAll("(?i)\\.disabled$", "") : fn;
+            Label name = new Label(display + (disabled ? "   (disabled)" : ""));
             name.getStyleClass().add("card-title-sm");
+            if (disabled) name.setStyle("-fx-text-fill: #7d7d7d;");
             Label size = new Label(fileSize(f));
             size.getStyleClass().add("card-sub");
             VBox info = new VBox(2, name, size);
             HBox.setHgrow(info, Priority.ALWAYS);
+
+            Button toggle = new Button(disabled ? "Enable" : "Disable");
+            toggle.getStyleClass().add("btn-outline");
+            toggle.setOnAction(e -> {
+                try {
+                    Path target = disabled ? f.resolveSibling(display) : f.resolveSibling(fn + ".disabled");
+                    Files.move(f, target);
+                    populateFolderItems(inst, folder, list);
+                } catch (Exception ex) { alert(Alert.AlertType.ERROR, "Toggle failed", ex.getMessage()); }
+            });
             Button remove = new Button("Remove");
             remove.getStyleClass().add("btn-outline");
             remove.setOnAction(e -> {
                 try { Files.deleteIfExists(f); populateFolderItems(inst, folder, list); }
                 catch (Exception ex) { alert(Alert.AlertType.ERROR, "Remove failed", ex.getMessage()); }
             });
-            HBox row = new HBox(10, info, remove);
+            HBox row = new HBox(10, info, toggle, remove);
             row.setAlignment(Pos.CENTER_LEFT);
             StackPane card = new StackPane(row);
             card.getStyleClass().add("card");
@@ -929,7 +989,7 @@ public class MainApp extends Application {
     private void showBrowse() { showBrowse(null, null); }
 
     private void showBrowse(Instance preselect, String preTypeLabel) {
-        selectNav(navByName.get("Browse Modpacks"));
+        selectNav(navByName.get("Browse Mods"));
         VBox page = new VBox(14);
         page.getStyleClass().add("content");
         Label title = new Label("Browse Content");
@@ -994,12 +1054,32 @@ public class MainApp extends Application {
             loadMore.setText("Loading…");
             Thread t = new Thread(() -> {
                 try {
-                    var res = new ModrinthClient().search(query, inst.version(), loaderFacet, type, sort, startOffset, 20);
+                    ModrinthClient client = new ModrinthClient();
+                    var res = client.search(query, inst.version(), loaderFacet, type, sort, startOffset, 20);
+                    // Fallback: Modrinth's search index occasionally returns nothing — if you typed a
+                    // name, try a direct project lookup by slug so you can still find/install it.
+                    ModrinthClient.Hit fb = null;
+                    if (reset && res.hits().isEmpty() && query != null && !query.isBlank()) {
+                        try {
+                            var pd = client.project(query.trim().toLowerCase().replaceAll("\\s+", "-"));
+                            fb = new ModrinthClient.Hit(pd.id(), pd.slug(), pd.title(), pd.summary(),
+                                    pd.downloads(), pd.iconUrl(), type);
+                        } catch (Exception ignore) {
+                        }
+                    }
+                    final ModrinthClient.Hit fallback = fb;
                     Platform.runLater(() -> {
                         if (reset && res.hits().isEmpty()) {
-                            Label none = new Label("No compatible " + typeBox.getValue().toLowerCase() + " found.");
-                            none.getStyleClass().add("muted");
-                            results.getChildren().add(none);
+                            if (fallback != null) {
+                                results.getChildren().add(modCard(fallback, inst, type));
+                            } else {
+                                Label none = new Label(query == null || query.isBlank()
+                                        ? "No results — Modrinth search may be temporarily unavailable. Try again shortly, or type an exact name (e.g. sodium)."
+                                        : "No compatible " + typeBox.getValue().toLowerCase() + " found for this version.");
+                                none.getStyleClass().add("muted");
+                                none.setWrapText(true);
+                                results.getChildren().add(none);
+                            }
                         }
                         for (var h : res.hits()) results.getChildren().add(modCard(h, inst, type));
                         offset[0] = startOffset + res.hits().size();
