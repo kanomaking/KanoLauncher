@@ -180,10 +180,11 @@ public class MainApp extends Application {
         showHome();   // dashboard landing
 
         // Size the window to FIT the screen so the (undecorated) title bar + window buttons are never
-        // pushed off-screen on smaller or DPI-scaled displays. Leave a small margin and center.
+        // pushed off-screen on smaller or DPI-scaled displays. Top-LEFT anchored with a generous
+        // margin — every corner (incl. the top-right min/max/close buttons) stays inside the work area.
         Rectangle2D vb = Screen.getPrimary().getVisualBounds();
-        double winW = Math.min(1180, vb.getWidth() - 40);
-        double winH = Math.min(720, vb.getHeight() - 40);
+        double winW = Math.min(1180, vb.getWidth() - 80);
+        double winH = Math.min(720, vb.getHeight() - 80);
 
         Scene scene = new Scene(shell, winW, winH);
         scene.setFill(Color.TRANSPARENT);
@@ -204,11 +205,11 @@ public class MainApp extends Application {
         stage.setMinHeight(Math.min(600, vb.getHeight() - 40));
         stage.setWidth(winW);
         stage.setHeight(winH);
-        // Anchor the window NEAR THE TOP (not vertically centered) so the custom title bar — and its
-        // min/max/close buttons — is always a fixed distance below the screen's top edge, never above it.
-        stage.setX(vb.getMinX() + Math.max(0, (vb.getWidth() - winW) / 2));
-        stage.setY(vb.getMinY() + 28);
+        // Top-left anchor with a 40px margin — guarantees the whole window (and its title bar) is on-screen.
+        stage.setX(vb.getMinX() + 40);
+        stage.setY(vb.getMinY() + 40);
         stage.show();
+        logWindowGeometry("after-show");
         // After show, undecorated stages can be nudged off-screen by the platform — clamp back in.
         Platform.runLater(this::clampOnScreen);
 
@@ -220,18 +221,40 @@ public class MainApp extends Application {
         checkForUpdate();
     }
 
-    /** Pull the window fully back into the screen's work area (top edge especially). */
+    /** Pull the window fully back into the work area of the screen it's actually on (top edge especially). */
     private void clampOnScreen() {
         if (stage == null) return;
-        Rectangle2D vb = Screen.getPrimary().getVisualBounds();
-        if (stage.getWidth() > vb.getWidth()) stage.setWidth(vb.getWidth() - 40);
-        if (stage.getHeight() > vb.getHeight()) stage.setHeight(vb.getHeight() - 40);
-        if (stage.getY() < vb.getMinY() + 4) stage.setY(vb.getMinY() + 28);
-        if (stage.getX() < vb.getMinX()) stage.setX(vb.getMinX() + 20);
-        double maxX = vb.getMinX() + vb.getWidth() - stage.getWidth();
-        double maxY = vb.getMinY() + vb.getHeight() - stage.getHeight();
-        if (stage.getX() > maxX) stage.setX(Math.max(vb.getMinX(), maxX));
-        if (stage.getY() > maxY) stage.setY(Math.max(vb.getMinY() + 28, maxY));
+        var screens = Screen.getScreensForRectangle(stage.getX(), stage.getY(),
+                Math.max(1, stage.getWidth()), Math.max(1, stage.getHeight()));
+        Screen scr = screens.isEmpty() ? Screen.getPrimary() : screens.get(0);
+        Rectangle2D vb = scr.getVisualBounds();
+        double w = Math.min(stage.getWidth(), vb.getWidth() - 60);
+        double h = Math.min(stage.getHeight(), vb.getHeight() - 60);
+        stage.setWidth(w);
+        stage.setHeight(h);
+        double x = Math.max(vb.getMinX() + 30, Math.min(stage.getX(), vb.getMinX() + vb.getWidth() - w - 30));
+        double y = Math.max(vb.getMinY() + 30, Math.min(stage.getY(), vb.getMinY() + vb.getHeight() - h - 30));
+        stage.setX(x);
+        stage.setY(y);
+        logWindowGeometry("clamped");
+    }
+
+    /** Append screen + window geometry to a debug log so off-screen placement can be diagnosed. */
+    private void logWindowGeometry(String when) {
+        try {
+            StringBuilder sb = new StringBuilder("[").append(when).append("]\n");
+            Screen pr = Screen.getPrimary();
+            sb.append("  primary.bounds=").append(pr.getBounds()).append("\n");
+            sb.append("  primary.visualBounds=").append(pr.getVisualBounds()).append("\n");
+            sb.append("  primary.outputScale=").append(pr.getOutputScaleX()).append(" x ").append(pr.getOutputScaleY()).append("\n");
+            sb.append("  screen count=").append(Screen.getScreens().size()).append("\n");
+            if (stage != null) sb.append("  stage x=").append((int) stage.getX()).append(" y=").append((int) stage.getY())
+                    .append(" w=").append((int) stage.getWidth()).append(" h=").append((int) stage.getHeight())
+                    .append(" maximized=").append(maximized).append("\n");
+            Files.writeString(resolveDataDir().resolve("window-debug.log"), sb.toString(),
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+        }
     }
 
     /** Re-fit + re-center the window (Ctrl+Shift+R) — a manual rescue if it ever ends up off-screen. */
