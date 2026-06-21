@@ -545,24 +545,6 @@ public class MainApp extends Application {
                 settingRow("Extra JVM args", jvmF),
                 saveSettings);
 
-        // ---- Mods + resource packs ----
-        Label modsLbl = new Label("Mods");
-        modsLbl.getStyleClass().add("card-title-sm");
-        Button addMods = new Button("+ Add Mods");
-        addMods.getStyleClass().add("btn-outline");
-        addMods.setOnAction(e -> showBrowse(inst));
-        Region modsGrow = new Region();
-        HBox.setHgrow(modsGrow, Priority.ALWAYS);
-        HBox modsHeader = new HBox(10, modsLbl, modsGrow, addMods);
-        modsHeader.setAlignment(Pos.CENTER_LEFT);
-        VBox modsList = new VBox(8);
-        populateInstalledMods(inst, modsList);
-
-        Label rpLbl = new Label("Resource Packs");
-        rpLbl.getStyleClass().add("card-title-sm");
-        VBox rpList = new VBox(8);
-        populateResourcePacks(inst, rpList);
-
         Button del = new Button("Delete Instance");
         del.getStyleClass().add("btn-outline");
         del.setOnAction(e -> {
@@ -571,7 +553,11 @@ public class MainApp extends Application {
         });
 
         VBox bodyBox = new VBox(14, setLbl, profLbl, swatches, settingsBox,
-                modsHeader, modsList, rpLbl, rpList, new Region(), del);
+                contentSection(inst, "Mods", "mods", "Mods"),
+                contentSection(inst, "Resource Packs", "resourcepacks", "Resource Packs"),
+                contentSection(inst, "Shaders", "shaderpacks", "Shaders"),
+                contentSection(inst, "Data Packs", "datapacks", "Data Packs"),
+                new Region(), del);
         ScrollPane scroll = new ScrollPane(bodyBox);
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("scroll-pane");
@@ -859,58 +845,60 @@ public class MainApp extends Application {
         scroll.getStyleClass().add("scroll-pane");
         VBox.setVgrow(scroll, Priority.ALWAYS);
 
-        pick.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> populateInstalledMods(b, list));
+        pick.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> populateFolderItems(b, "mods", list));
         page.getChildren().addAll(title, pick, scroll);
         content.getChildren().setAll(page);
-        populateInstalledMods(pick.getValue(), list);
+        populateFolderItems(pick.getValue(), "mods", list);
     }
 
-    private void populateInstalledMods(Instance inst, VBox list) {
+    /** A titled content section with an "+ Add" button (opens Browse for this instance + type) and a file list. */
+    private VBox contentSection(Instance inst, String title, String folder, String browseTypeLabel) {
+        Label lbl = new Label(title);
+        lbl.getStyleClass().add("card-title-sm");
+        Button add = new Button("+ Add " + title);
+        add.getStyleClass().add("btn-outline");
+        add.setOnAction(e -> showBrowse(inst, browseTypeLabel));
+        Region g = new Region();
+        HBox.setHgrow(g, Priority.ALWAYS);
+        HBox header = new HBox(10, lbl, g, add);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox listBox = new VBox(8);
+        populateFolderItems(inst, folder, listBox);
+        return new VBox(8, header, listBox);
+    }
+
+    /** List files in an instance subfolder; Remove deletes the file. */
+    private void populateFolderItems(Instance inst, String folder, VBox list) {
         list.getChildren().clear();
         if (inst == null) return;
-        Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
-        List<Path> jars = new ArrayList<>();
-        if (Files.isDirectory(modsDir)) {
-            try (var s = Files.list(modsDir)) {
-                s.filter(pth -> pth.toString().toLowerCase().endsWith(".jar")).sorted().forEach(jars::add);
+        Path dir = instanceManager.instanceDir(inst).resolve(folder);
+        List<Path> items = new ArrayList<>();
+        if (Files.isDirectory(dir)) {
+            try (var s = Files.list(dir)) {
+                s.filter(Files::isRegularFile).sorted().forEach(items::add);
             } catch (Exception ignored) {
             }
         }
-        if (jars.isEmpty()) {
-            Label none = new Label("No mods installed in this instance. Add some from Browse Mods.");
+        if (items.isEmpty()) {
+            Label none = new Label("Nothing here yet — use “+ Add”.");
             none.getStyleClass().add("muted");
             list.getChildren().add(none);
             return;
         }
-        for (Path jar : jars) {
-            boolean disabled = jar.toString().toLowerCase().endsWith(".disabled");
-            String display = jar.getFileName().toString().replaceAll("(?i)\\.disabled$", "");
-            Label name = new Label(display + (disabled ? "   (disabled)" : ""));
+        for (Path f : items) {
+            Label name = new Label(f.getFileName().toString());
             name.getStyleClass().add("card-title-sm");
-            if (disabled) name.setStyle("-fx-text-fill: #7d7d7d;");
-            Label size = new Label(fileSize(jar));
+            Label size = new Label(fileSize(f));
             size.getStyleClass().add("card-sub");
             VBox info = new VBox(2, name, size);
             HBox.setHgrow(info, Priority.ALWAYS);
-
-            Button toggle = new Button(disabled ? "Enable" : "Disable");
-            toggle.getStyleClass().add("btn-outline");
-            toggle.setOnAction(e -> {
-                try {
-                    Path target = disabled
-                            ? jar.resolveSibling(display)
-                            : jar.resolveSibling(jar.getFileName().toString() + ".disabled");
-                    Files.move(jar, target);
-                    populateInstalledMods(inst, list);
-                } catch (Exception ex) { alert(Alert.AlertType.ERROR, "Toggle failed", ex.getMessage()); }
-            });
             Button remove = new Button("Remove");
             remove.getStyleClass().add("btn-outline");
             remove.setOnAction(e -> {
-                try { Files.deleteIfExists(jar); populateInstalledMods(inst, list); }
+                try { Files.deleteIfExists(f); populateFolderItems(inst, folder, list); }
                 catch (Exception ex) { alert(Alert.AlertType.ERROR, "Remove failed", ex.getMessage()); }
             });
-            HBox row = new HBox(10, info, toggle, remove);
+            HBox row = new HBox(10, info, remove);
             row.setAlignment(Pos.CENTER_LEFT);
             StackPane card = new StackPane(row);
             card.getStyleClass().add("card");
@@ -938,9 +926,9 @@ public class MainApp extends Application {
         };
     }
 
-    private void showBrowse() { showBrowse(null); }
+    private void showBrowse() { showBrowse(null, null); }
 
-    private void showBrowse(Instance preselect) {
+    private void showBrowse(Instance preselect, String preTypeLabel) {
         selectNav(navByName.get("Browse Modpacks"));
         VBox page = new VBox(14);
         page.getStyleClass().add("content");
@@ -969,6 +957,9 @@ public class MainApp extends Application {
         ChoiceBox<String> typeBox = new ChoiceBox<>();
         typeBox.getItems().addAll("Mods", "Modpacks", "Resource Packs", "Shaders", "Data Packs");
         typeBox.getSelectionModel().selectFirst();
+        if (preTypeLabel != null && typeBox.getItems().contains(preTypeLabel)) {
+            typeBox.getSelectionModel().select(preTypeLabel);
+        }
 
         ChoiceBox<String> sortBox = new ChoiceBox<>();
         sortBox.getItems().addAll("Most downloads", "Relevance", "Most followers", "Newest", "Recently updated");
@@ -1086,7 +1077,8 @@ public class MainApp extends Application {
             case "mod" -> "mods";
             case "resourcepack" -> "resourcepacks";
             case "shader" -> "shaderpacks";
-            default -> null; // modpack / datapack need special handling
+            case "datapack" -> "datapacks"; // holding folder (copy into a world's datapacks/ to use)
+            default -> null; // modpack needs .mrpack extraction — not yet
         };
     }
 
