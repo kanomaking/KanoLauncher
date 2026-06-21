@@ -1,0 +1,4 @@
+# Copy this file to "clientid.txt" and paste your Azure "Application (client) ID" below.
+# Get it from: Azure Portal > Microsoft Entra ID > App registrations > your app > Overview.
+# Lines starting with # are ignored. The client ID is a public identifier, not a secret.
+PASTE-YOUR-CLIENT-ID-HERE

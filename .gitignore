@@ -1,0 +1,12 @@
+# Build output
+login-test/out/
+**/*.class
+
+# Personal Azure client ID (public identifier, but each user supplies their own)
+login-test/clientid.txt
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
