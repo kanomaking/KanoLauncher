@@ -611,7 +611,7 @@ public class MainApp extends Application {
         HBox row = new HBox(18, iconTile, info);
         row.setAlignment(Pos.CENTER_LEFT);
 
-        StackPane card = new StackPane(row, editIcon(inst));
+        StackPane card = new StackPane(row);
         card.getStyleClass().addAll("card", "card-featured");
         card.setStyle("-fx-cursor: hand;");
         card.setOnMouseClicked(e -> showInstanceDetail(inst));
@@ -638,7 +638,7 @@ public class MainApp extends Application {
         play.setOnAction(e -> onPlay(inst, bar, play));
         row.getChildren().add(play);
 
-        StackPane card = new StackPane(row, editIcon(inst));
+        StackPane card = new StackPane(row);
         card.getStyleClass().add("card");
         card.setPrefWidth(420);
         card.setStyle("-fx-cursor: hand;");

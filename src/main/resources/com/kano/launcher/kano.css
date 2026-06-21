@@ -212,6 +212,26 @@
 }
 .combo-box .list-cell { -fx-text-fill: #E0E0E0; -fx-background-color: #14151b; }
 
+/* color picker — match the dark theme */
+.color-picker {
+    -fx-background-color: #14151b;
+    -fx-border-color: -kano-border;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+}
+.color-picker > .label { -fx-text-fill: #E0E0E0; }
+.color-picker > .arrow-button > .arrow { -fx-background-color: #C0C0C0; }
+.color-palette {
+    -fx-background-color: #14151b;
+    -fx-border-color: -kano-border;
+}
+.color-palette .label { -fx-text-fill: #C0C0C0; }
+.color-palette .button, .custom-color-dialog .button { -fx-text-fill: #E0E0E0; }
+.custom-color-dialog {
+    -fx-background-color: #0e0f15;
+}
+.custom-color-dialog .label { -fx-text-fill: #C0C0C0; }
+
 /* tabs (instance detail) */
 .kano-tabs > .tab-header-area > .tab-header-background { -fx-background-color: transparent; }
 .kano-tabs > .tab-header-area { -fx-padding: 0 0 4 0; }
