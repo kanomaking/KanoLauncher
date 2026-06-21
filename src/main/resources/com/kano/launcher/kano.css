@@ -189,6 +189,14 @@
     -fx-border-color: rgba(211,47,47,0.55);
     -fx-alignment: center;
 }
+.block-swatch {
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-border-color: rgba(0,0,0,0.45);
+    -fx-border-width: 1;
+    -fx-cursor: hand;
+}
+.block-swatch:hover { -fx-border-color: #FFFFFF; -fx-border-width: 2; }
 
 .play-circle {
     -fx-background-color: #D32F2F;

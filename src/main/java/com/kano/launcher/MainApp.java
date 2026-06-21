@@ -33,6 +33,7 @@ import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.Node;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -366,6 +367,8 @@ public class MainApp extends Application {
 
         StackPane card = new StackPane(row, editIcon(inst));
         card.getStyleClass().addAll("card", "card-featured");
+        card.setStyle("-fx-cursor: hand;");
+        card.setOnMouseClicked(e -> showInstanceDetail(inst));
         return card;
     }
 
@@ -392,28 +395,195 @@ public class MainApp extends Application {
         StackPane card = new StackPane(row, editIcon(inst));
         card.getStyleClass().add("card");
         card.setPrefWidth(420);
+        card.setStyle("-fx-cursor: hand;");
+        card.setOnMouseClicked(e -> showInstanceDetail(inst));
         return card;
     }
 
     private StackPane iconTile(Instance inst, boolean small) {
-        Label g = new Label(switch (inst.loader()) {
-            case FABRIC, QUILT -> "⛏"; // pickaxe-ish
-            case FORGE, NEOFORGE -> "⚒"; // hammer & pick
-            default -> "■"; // block
-        });
-        g.getStyleClass().add("icon-glyph");
-        StackPane tile = new StackPane(g);
+        StackPane tile = new StackPane();
         tile.getStyleClass().add("icon-tile");
         if (small) tile.getStyleClass().add("icon-tile-sm");
+        tile.setStyle("-fx-background-color: " + blockColor(inst.iconOrDefault()) + ";");
         return tile;
     }
 
     private Button editIcon(Instance inst) {
         Button edit = new Button("✎");
         edit.getStyleClass().add("edit-btn");
-        edit.setOnAction(e -> showEditDialog(inst));
+        edit.setOnAction(e -> showInstanceDetail(inst));
         StackPane.setAlignment(edit, Pos.TOP_RIGHT);
         return edit;
+    }
+
+    // ---- preset profile blocks (stylized, original colors — not Mojang textures) ----
+
+    private record Block(String key, String name, String color) {}
+
+    private static final List<Block> BLOCKS = List.of(
+            new Block("grass", "Grass", "#5b8f3a"),
+            new Block("stone", "Stone", "#8a8a8a"),
+            new Block("dirt", "Dirt", "#7a5a3a"),
+            new Block("diamond", "Diamond", "#4aedd9"),
+            new Block("gold", "Gold", "#e8b923"),
+            new Block("redstone", "Redstone", "#c0301c"),
+            new Block("emerald", "Emerald", "#1aa34a"),
+            new Block("lapis", "Lapis", "#2452cf"),
+            new Block("netherite", "Netherite", "#5a4f55"),
+            new Block("obsidian", "Obsidian", "#2a2438"),
+            new Block("tnt", "TNT", "#c43b2b"),
+            new Block("crafting", "Crafting Table", "#9b6a3f"));
+
+    private static String blockColor(String key) {
+        for (Block b : BLOCKS) if (b.key().equals(key)) return b.color();
+        return "#5b8f3a";
+    }
+
+    // ---- instance detail page ----
+
+    private void showInstanceDetail(Instance inst) {
+        selectNav(navByName.get("Instances"));
+        VBox page = new VBox(16);
+        page.getStyleClass().add("content");
+
+        Button back = new Button("←  Back");
+        back.getStyleClass().add("nav-button");
+        back.setOnAction(e -> showInstances());
+
+        StackPane icon = new StackPane();
+        icon.getStyleClass().add("icon-tile");
+        icon.setStyle("-fx-background-color: " + blockColor(inst.iconOrDefault()) + ";");
+        Label name = new Label(inst.name());
+        name.getStyleClass().add("page-title");
+        Label meta = new Label(metaLine(inst) + "    •    Last played: " + lastPlayed(inst));
+        meta.getStyleClass().add("card-meta");
+        VBox titleBox = new VBox(4, name, meta);
+        Region grow = new Region();
+        HBox.setHgrow(grow, Priority.ALWAYS);
+
+        ProgressBar bar = progress(0.0);
+        bar.setPrefWidth(160);
+        Button play = new Button("▶  Play");
+        play.getStyleClass().add("btn-filled");
+        play.setOnAction(e -> onPlay(inst, bar, play));
+        VBox playBox = new VBox(6, play, bar);
+        playBox.setAlignment(Pos.CENTER_RIGHT);
+
+        HBox header = new HBox(16, back, icon, titleBox, grow, playBox);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        // Profile-icon picker
+        Label profLbl = new Label("Profile Icon");
+        profLbl.getStyleClass().add("card-title-sm");
+        FlowPane swatches = new FlowPane(8, 8);
+        for (Block b : BLOCKS) {
+            StackPane sw = new StackPane();
+            sw.getStyleClass().add("block-swatch");
+            sw.setMinSize(42, 42);
+            sw.setMaxSize(42, 42);
+            boolean selected = b.key().equals(inst.iconOrDefault());
+            sw.setStyle("-fx-background-color: " + b.color() + ";"
+                    + (selected ? " -fx-border-color: #FFFFFF; -fx-border-width: 2.5;" : ""));
+            Tooltip.install(sw, new Tooltip(b.name()));
+            sw.setOnMouseClicked(e -> {
+                try {
+                    instanceManager.update(inst.withIconKey(b.key()));
+                    showInstanceDetail(currentInstance(inst));
+                } catch (Exception ex) {
+                    alert(Alert.AlertType.ERROR, "Save failed", ex.getMessage());
+                }
+            });
+            swatches.getChildren().add(sw);
+        }
+
+        // RAM setting
+        Label ramLbl = new Label("RAM (MB)");
+        ramLbl.getStyleClass().add("card-sub");
+        TextField ram = new TextField(String.valueOf(inst.ramMb()));
+        ram.setMaxWidth(120);
+        Button saveRam = new Button("Save");
+        saveRam.getStyleClass().add("btn-outline");
+        saveRam.setOnAction(e -> {
+            try {
+                instanceManager.update(inst.withRam(Integer.parseInt(ram.getText().trim())));
+                alert(Alert.AlertType.INFORMATION, "Saved", "RAM set to " + ram.getText().trim() + " MB.");
+            } catch (Exception ex) {
+                alert(Alert.AlertType.ERROR, "Invalid value", "Enter a number, e.g. 4096.");
+            }
+        });
+        HBox ramRow = new HBox(10, ram, saveRam);
+        ramRow.setAlignment(Pos.CENTER_LEFT);
+
+        // Mods + resource packs
+        Label modsLbl = new Label("Mods");
+        modsLbl.getStyleClass().add("card-title-sm");
+        VBox modsList = new VBox(8);
+        populateInstalledMods(inst, modsList);
+        Label rpLbl = new Label("Resource Packs");
+        rpLbl.getStyleClass().add("card-title-sm");
+        VBox rpList = new VBox(8);
+        populateResourcePacks(inst, rpList);
+
+        Button del = new Button("Delete Instance");
+        del.getStyleClass().add("btn-outline");
+        del.setOnAction(e -> {
+            try { instanceManager.delete(inst); showInstances(); }
+            catch (Exception ex) { alert(Alert.AlertType.ERROR, "Delete failed", ex.getMessage()); }
+        });
+
+        VBox bodyBox = new VBox(12, profLbl, swatches, ramLbl, ramRow,
+                modsLbl, modsList, rpLbl, rpList, new Region(), del);
+        ScrollPane scroll = new ScrollPane(bodyBox);
+        scroll.setFitToWidth(true);
+        scroll.getStyleClass().add("scroll-pane");
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+
+        page.getChildren().addAll(header, scroll);
+        content.getChildren().setAll(page);
+    }
+
+    private Instance currentInstance(Instance inst) {
+        if (instanceManager == null) return inst;
+        return instanceManager.list().stream()
+                .filter(x -> x.dirName().equals(inst.dirName())).findFirst().orElse(inst);
+    }
+
+    private void populateResourcePacks(Instance inst, VBox list) {
+        list.getChildren().clear();
+        Path rpDir = instanceManager.instanceDir(inst).resolve("resourcepacks");
+        List<Path> packs = new ArrayList<>();
+        if (Files.isDirectory(rpDir)) {
+            try (var s = Files.list(rpDir)) {
+                s.filter(pth -> {
+                    String n = pth.toString().toLowerCase();
+                    return n.endsWith(".zip") || Files.isDirectory(pth);
+                }).sorted().forEach(packs::add);
+            } catch (Exception ignored) {
+            }
+        }
+        if (packs.isEmpty()) {
+            Label none = new Label("No resource packs. Drop .zip packs into the instance's resourcepacks/ folder.");
+            none.getStyleClass().add("muted");
+            list.getChildren().add(none);
+            return;
+        }
+        for (Path pack : packs) {
+            Label nm = new Label(pack.getFileName().toString());
+            nm.getStyleClass().add("card-title-sm");
+            Region grow = new Region();
+            HBox.setHgrow(grow, Priority.ALWAYS);
+            Button remove = new Button("Remove");
+            remove.getStyleClass().add("btn-outline");
+            remove.setOnAction(e -> {
+                try { Files.deleteIfExists(pack); populateResourcePacks(inst, list); }
+                catch (Exception ex) { alert(Alert.AlertType.ERROR, "Remove failed", ex.getMessage()); }
+            });
+            HBox row = new HBox(12, nm, grow, remove);
+            row.setAlignment(Pos.CENTER_LEFT);
+            StackPane card = new StackPane(row);
+            card.getStyleClass().add("card");
+            list.getChildren().add(card);
+        }
     }
 
     private ProgressBar progress(double v) {
@@ -473,8 +643,7 @@ public class MainApp extends Application {
                 Platform.runLater(() -> play.getStyleClass().remove("loading"));
 
                 // Mark last-played and refresh the view.
-                instanceManager.update(new Instance(inst.name(), inst.version(), inst.loader(),
-                        inst.dirName(), inst.createdEpoch(), System.currentTimeMillis(), inst.ramMb()));
+                instanceManager.update(inst.withLastPlayed(System.currentTimeMillis()));
                 Platform.runLater(this::showInstances);
 
                 // Surface an early crash with the log tail; silent on normal exit.
@@ -595,8 +764,7 @@ public class MainApp extends Application {
         try {
             if (result == ButtonType.APPLY) {
                 int mb = Integer.parseInt(ram.getText().trim());
-                instanceManager.update(new Instance(inst.name(), inst.version(), inst.loader(),
-                        inst.dirName(), inst.createdEpoch(), inst.lastPlayedEpoch(), mb));
+                instanceManager.update(inst.withRam(mb));
                 showInstances();
             } else if (result == deleteBtn) {
                 instanceManager.delete(inst);
