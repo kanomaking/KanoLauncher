@@ -104,7 +104,7 @@ import java.util.Map;
  */
 public class MainApp extends Application {
 
-    private static final String VERSION = "v1.0.0";
+    private static final String VERSION = "v1.1.0";
     private static final String[] VERSIONS = {"1.21.4", "1.21.1", "1.20.6", "1.20.4", "1.20.1"};
 
     private final StackPane content = new StackPane();
