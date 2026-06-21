@@ -123,7 +123,7 @@ public class MainApp extends Application {
     private Label accountChip;
     private HBox avatarBar;
     private Label titleText;
-    private Label brandWord;
+    private javafx.scene.text.TextFlow brandFlow;
     private Stats stats;
     private Label statsLabel;
     private Config config;
@@ -496,10 +496,10 @@ public class MainApp extends Application {
 
         Label logo = new Label("K");
         logo.getStyleClass().add("brand-logo");
-        Label word = new Label(launcherName());
-        word.getStyleClass().add("brand-word");
-        brandWord = word;
-        HBox brand = new HBox(10, logo, word);
+        brandFlow = new javafx.scene.text.TextFlow();
+        rebuildBrand();
+        HBox brand = new HBox(10, logo, brandFlow);
+        brand.setAlignment(Pos.CENTER_LEFT);
         brand.getStyleClass().add("brand-row");
 
         side.getChildren().add(brand);
@@ -512,6 +512,21 @@ public class MainApp extends Application {
                 nav("☺", "Skins", this::showSkins),
                 nav("⚙", "Settings", this::showSettings));
         return side;
+    }
+
+    /** Render the sidebar brand from the configured colour segments (each run its own hex colour). */
+    private void rebuildBrand() {
+        if (brandFlow == null) return;
+        brandFlow.getChildren().clear();
+        List<Config.NameSegment> segs = config != null
+                ? config.nameSegments()
+                : List.of(new Config.NameSegment(launcherName(), "#FFFFFF"));
+        for (Config.NameSegment s : segs) {
+            javafx.scene.text.Text tx = new javafx.scene.text.Text(s.text());
+            String color = s.color() == null || s.color().isBlank() ? "#FFFFFF" : s.color();
+            tx.setStyle("-fx-font-size:17px; -fx-font-weight:bold; -fx-fill:" + color + ";");
+            brandFlow.getChildren().add(tx);
+        }
     }
 
     private HBox nav(String icon, String text, Runnable action) {
@@ -2507,6 +2522,7 @@ public class MainApp extends Application {
         }
         Path modsDir = instanceManager.instanceDir(inst).resolve("mods");
         try { Files.createDirectories(modsDir); } catch (Exception ignore) {}
+        openFolder(modsDir); // open right away so the user can drop the OptiFine jar in
         // Auto-install OptiFabric from Modrinth if available (then only the OptiFine jar is manual).
         Thread t = new Thread(() -> {
             String status;
@@ -2821,22 +2837,48 @@ public class MainApp extends Application {
         VBox bgBox = new VBox(8, bgLbl, bgHelp, new HBox(10, chooseBg, resetBg));
         bgBox.setStyle("-fx-padding: 12 0 0 0;");
 
-        // Launcher name
-        Label nameLbl = new Label("Launcher name");
+        // Launcher name & colours — split the name into coloured parts.
+        Label nameLbl = new Label("Launcher name & colours");
         nameLbl.getStyleClass().add("card-title-sm");
-        TextField nameField = new TextField(launcherName());
-        nameField.setPrefWidth(280);
+        Label nameHelp = new Label("Break the name into parts, each with its own colour (shown in the sidebar).");
+        nameHelp.getStyleClass().add("muted");
+        VBox segRows = new VBox(8);
+        java.util.function.BiConsumer<String, String> addRow = (text, color) -> {
+            TextField tf = new TextField(text);
+            tf.setPrefWidth(180);
+            ColorPicker cp = new ColorPicker(Color.web(color == null || color.isBlank() ? "#FFFFFF" : color));
+            Button rm = new Button("✕");
+            rm.getStyleClass().add("btn-outline");
+            HBox row = new HBox(8, tf, cp, rm);
+            row.setAlignment(Pos.CENTER_LEFT);
+            rm.setOnAction(ev -> { if (segRows.getChildren().size() > 1) segRows.getChildren().remove(row); });
+            segRows.getChildren().add(row);
+        };
+        for (Config.NameSegment s : (config != null ? config.nameSegments()
+                : List.of(new Config.NameSegment(launcherName(), "#FFFFFF"))))
+            addRow.accept(s.text(), s.color());
+        Button addPart = new Button("+ Add part");
+        addPart.getStyleClass().add("btn-outline");
+        addPart.setOnAction(e -> addRow.accept("Text", toHex(Color.web(resolveAccent()))));
         Button saveName = new Button("Save Name");
         saveName.getStyleClass().add("btn-filled");
         saveName.setOnAction(e -> {
-            if (config != null) config.setLauncherName(nameField.getText());
+            List<Config.NameSegment> segs = new ArrayList<>();
+            for (Node n : segRows.getChildren()) {
+                if (n instanceof HBox row && row.getChildren().get(0) instanceof TextField tf
+                        && row.getChildren().get(1) instanceof ColorPicker cp && !tf.getText().isEmpty()) {
+                    segs.add(new Config.NameSegment(tf.getText(), toHex(cp.getValue())));
+                }
+            }
+            if (segs.isEmpty()) { alert(Alert.AlertType.ERROR, "Empty name", "Add at least one part with text."); return; }
+            if (config != null) config.setNameSegments(segs);
+            rebuildBrand();
             String nm = launcherName();
             if (titleText != null) titleText.setText(nm + " " + VERSION);
-            if (brandWord != null) brandWord.setText(nm);
             if (stage != null) stage.setTitle(nm);
-            alert(Alert.AlertType.INFORMATION, "Saved", "Launcher name set to " + nm + ".");
+            alert(Alert.AlertType.INFORMATION, "Saved", "Launcher name updated.");
         });
-        VBox nameBox = new VBox(8, nameLbl, new HBox(10, nameField, saveName));
+        VBox nameBox = new VBox(8, nameLbl, nameHelp, segRows, new HBox(10, addPart, saveName));
         nameBox.setStyle("-fx-padding: 12 0 0 0;");
 
         // Color scheme

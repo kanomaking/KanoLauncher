@@ -2,14 +2,20 @@ package com.kano.launcher.core;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Global launcher settings (config.json). Currently just the user's CurseForge API key. */
+/** Global launcher settings (config.json). */
 public final class Config {
+
+    /** One coloured run of the launcher name (for the multi-colour brand). */
+    public record NameSegment(String text, String color) {}
 
     private final Path file;
     private String curseforgeApiKey = "";
@@ -24,6 +30,7 @@ public final class Config {
     private boolean minimizeOnPlay = false;
     private boolean confirmDelete = true;
     private boolean animations = true;
+    private List<NameSegment> nameSegments = new ArrayList<>();
 
     public Config(Path dataDir) {
         this.file = dataDir.resolve("config.json");
@@ -104,6 +111,21 @@ public final class Config {
 
     public void setAnimations(boolean v) { this.animations = v; save(); }
 
+    /** Coloured runs of the brand name; defaults to the whole name in white if unset. */
+    public List<NameSegment> nameSegments() {
+        if (nameSegments == null || nameSegments.isEmpty())
+            return List.of(new NameSegment(launcherName(), "#FFFFFF"));
+        return List.copyOf(nameSegments);
+    }
+
+    public void setNameSegments(List<NameSegment> segs) {
+        this.nameSegments = segs == null ? new ArrayList<>() : new ArrayList<>(segs);
+        StringBuilder sb = new StringBuilder();
+        for (NameSegment s : this.nameSegments) if (s.text() != null) sb.append(s.text());
+        if (sb.length() > 0) this.launcherName = sb.toString(); // keep the plain name (OS title) in sync
+        save();
+    }
+
     private void load() {
         try {
             if (Files.exists(file)) {
@@ -120,6 +142,11 @@ public final class Config {
                 if (o != null && o.has("minimizeOnPlay")) minimizeOnPlay = o.get("minimizeOnPlay").getAsBoolean();
                 if (o != null && o.has("confirmDelete")) confirmDelete = o.get("confirmDelete").getAsBoolean();
                 if (o != null && o.has("animations")) animations = o.get("animations").getAsBoolean();
+                if (o != null && o.has("nameSegments")) {
+                    nameSegments = new Gson().fromJson(o.get("nameSegments"),
+                            new TypeToken<ArrayList<NameSegment>>() {}.getType());
+                    if (nameSegments == null) nameSegments = new ArrayList<>();
+                }
             }
         } catch (Exception ignored) {
         }
@@ -140,6 +167,7 @@ public final class Config {
             o.addProperty("minimizeOnPlay", minimizeOnPlay);
             o.addProperty("confirmDelete", confirmDelete);
             o.addProperty("animations", animations);
+            o.add("nameSegments", new Gson().toJsonTree(nameSegments));
             Path tmp = file.resolveSibling("config.json.tmp");
             Files.writeString(tmp, new Gson().toJson(o), StandardCharsets.UTF_8);
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
