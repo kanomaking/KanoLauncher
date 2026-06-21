@@ -1,0 +1,4 @@
+# KanoLauncher Azure "Application (client) ID" — public identifier (NOT a secret).
+# Bundled into the build so the packaged app can log in once Microsoft approves the app.
+# Replace the line below if your client ID ever changes. Lines starting with # are ignored.
+abf98059-cefb-4fbc-97d2-72e51eaceb73

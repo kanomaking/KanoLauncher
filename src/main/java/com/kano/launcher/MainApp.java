@@ -3828,13 +3828,29 @@ public class MainApp extends Application {
     private String resolveClientId() {
         String env = System.getenv("KANO_CLIENT_ID");
         if (env != null && !env.isBlank()) return env.trim();
-        Path f = Path.of("login-test", "clientid.txt");
+        // Bundled into the build so the packaged app (and friends) have it — public identifier, not a secret.
+        String bundled = firstNonCommentLine(getClass().getResourceAsStream("/client-id.txt"));
+        if (bundled != null) return bundled;
+        // Dev fallback: login-test/clientid.txt when running from source.
         try {
+            Path f = Path.of("login-test", "clientid.txt");
             if (Files.exists(f)) {
-                for (String line : Files.readAllLines(f)) {
-                    String s = line.trim();
-                    if (!s.isEmpty() && !s.startsWith("#")) return s;
-                }
+                String s = firstNonCommentLine(Files.newInputStream(f));
+                if (s != null) return s;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    /** First non-blank, non-comment line of a stream (BOM-tolerant); null if none. Closes the stream. */
+    private static String firstNonCommentLine(java.io.InputStream in) {
+        if (in == null) return null;
+        try (var r = new java.io.BufferedReader(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                String s = line.replace("﻿", "").trim();
+                if (!s.isEmpty() && !s.startsWith("#")) return s;
             }
         } catch (Exception ignored) {
         }
