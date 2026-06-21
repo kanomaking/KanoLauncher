@@ -2330,11 +2330,30 @@ public class MainApp extends Application {
         t.start();
     }
 
-    // Sodium-family for Fabric/Quilt; Embeddium (the Sodium port) + Forge-compatible mods otherwise.
-    private static final String[] PERF_MODS_FABRIC =
-            {"sodium", "lithium", "ferrite-core", "modernfix", "entityculling", "immediatelyfast", "dynamic-fps"};
-    private static final String[] PERF_MODS_FORGE =
-            {"embeddium", "ferrite-core", "modernfix", "entityculling", "immediatelyfast", "dynamic-fps"};
+    // Curated, conflict-free, loader-correct performance stacks (researched + verified against the
+    // live Modrinth API — see KanoLauncher.md §11). Each mod's deps are resolved automatically; any
+    // slug with no build for the instance's exact version is skipped gracefully.
+    //
+    // Fabric/Quilt — full Sodium stack: renderer + companions, tick logic, lighting, chunk IO,
+    // memory, culling, micro-rendering, networking, threading, QoL.
+    private static final String[] PERF_MODS_FABRIC = {
+            "sodium", "sodium-extra", "reeses-sodium-options",
+            "lithium", "scalablelux", "c2me-fabric",
+            "ferrite-core", "modernfix", "threadtweak", "krypton",
+            "moreculling", "entityculling", "immediatelyfast", "dynamic-fps",
+            "debugify", "fastquit", "fast-ip-ping", "vmp-fabric"};
+    // NeoForge — Embeddium renderer (NOT Sodium, so no sodium-extra/reese's which would pull Sodium);
+    // Lithium + ScalableLux + MoreCulling + C2ME all have first-class NeoForge builds.
+    private static final String[] PERF_MODS_NEOFORGE = {
+            "embeddium", "lithium", "scalablelux", "c2me-neoforge",
+            "ferrite-core", "modernfix",
+            "moreculling", "entityculling", "immediatelyfast", "dynamic-fps",
+            "enhanced-block-entities-neoforged", "fast-ip-ping"};
+    // Forge — lighter (no Forge Lithium/ScalableLux/MoreCulling exist); Embeddium + memory + culling.
+    private static final String[] PERF_MODS_FORGE = {
+            "embeddium", "ferrite-core", "modernfix",
+            "cull-leaves", "entityculling", "immediatelyfast", "dynamic-fps",
+            "c2mef", "debugify", "fast-ip-ping"};
 
     private void installPerfPack(Instance inst, Button btn) {
         if (inst == null) return;
@@ -2343,8 +2362,11 @@ public class MainApp extends Application {
                     "The Performance Pack installs mods — make this a Fabric, NeoForge, or Forge instance first.");
             return;
         }
-        boolean forgey = inst.loader() == Loader.FORGE || inst.loader() == Loader.NEOFORGE;
-        String[] mods = forgey ? PERF_MODS_FORGE : PERF_MODS_FABRIC;
+        String[] mods = switch (inst.loader()) {
+            case NEOFORGE -> PERF_MODS_NEOFORGE;
+            case FORGE -> PERF_MODS_FORGE;
+            default -> PERF_MODS_FABRIC; // Fabric / Quilt
+        };
         String loaderTag = modLoaderTag(inst, "mod"); // fabric/quilt/forge/neoforge from the instance
         btn.setDisable(true);
         btn.setText("Installing…");
@@ -2371,9 +2393,14 @@ public class MainApp extends Application {
             Platform.runLater(() -> {
                 btn.setDisable(false);
                 btn.setText("⚡ Performance Pack");
+                String hint = (inst.loader() == Loader.FORGE && failed.size() >= 4)
+                        ? "\n\nHeads up: most performance mods (Embeddium, Lithium, etc.) only ship for Forge up to "
+                          + "~1.20.1. For " + inst.version() + " use NeoForge instead — it has the full stack and far higher FPS."
+                        : "";
                 alert(Alert.AlertType.INFORMATION, "Performance Pack",
                         "Added " + total + " file(s) to " + inst.name() + " (" + inst.loader().display() + ")."
-                        + (failed.isEmpty() ? "" : "\nSkipped (no compatible version): " + String.join(", ", failed)));
+                        + (failed.isEmpty() ? "" : "\nSkipped (no compatible build): " + String.join(", ", failed))
+                        + hint);
             });
         }, "perf-pack");
         t.setDaemon(true);
