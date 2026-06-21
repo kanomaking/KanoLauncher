@@ -577,10 +577,17 @@ public class MainApp extends Application {
             empty.getStyleClass().add("muted");
             body.getChildren().add(empty);
         } else {
-            // Uniform grid — every instance renders the same way (no special first/featured card).
-            FlowPane grid = new FlowPane(16, 16);
-            for (Instance inst : all) grid.getChildren().add(smallCard(inst));
-            body.getChildren().add(grid);
+            // Group by label: named groups first (alphabetical), then everything ungrouped.
+            java.util.Map<String, List<Instance>> groups = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+            List<Instance> ungrouped = new ArrayList<>();
+            for (Instance inst : all) {
+                String g = inst.groupOrNone();
+                if (g.isEmpty()) ungrouped.add(inst);
+                else groups.computeIfAbsent(g, k -> new ArrayList<>()).add(inst);
+            }
+            boolean anyNamed = !groups.isEmpty();
+            for (var en : groups.entrySet()) body.getChildren().add(groupSection(en.getKey(), en.getValue(), true));
+            if (!ungrouped.isEmpty()) body.getChildren().add(groupSection(anyNamed ? "Ungrouped" : "", ungrouped, false));
         }
 
         ScrollPane scroll = new ScrollPane(body);
@@ -590,6 +597,93 @@ public class MainApp extends Application {
 
         page.getChildren().addAll(header, scroll);
         content.getChildren().setAll(page);
+    }
+
+    /** A group's header (name + bulk actions) over its card grid. Pass label "" for a bare grid. */
+    private Region groupSection(String label, List<Instance> items, boolean named) {
+        VBox section = new VBox(10);
+        FlowPane grid = new FlowPane(16, 16);
+        for (Instance inst : items) grid.getChildren().add(smallCard(inst));
+        if (label == null || label.isEmpty()) { section.getChildren().add(grid); return section; }
+
+        Label name = new Label(label + "  (" + items.size() + ")");
+        name.getStyleClass().add("group-title");
+        HBox head = new HBox(12, name);
+        head.setAlignment(Pos.CENTER_LEFT);
+        if (named) {
+            Region grow = new Region();
+            HBox.setHgrow(grow, Priority.ALWAYS);
+            Button ram = new Button("Set RAM…");
+            ram.getStyleClass().add("btn-outline");
+            ram.setOnAction(e -> bulkSetRam(label, items));
+            Button upd = new Button("⬆ Update mods");
+            upd.getStyleClass().add("btn-outline");
+            upd.setOnAction(e -> bulkUpdateMods(label, items));
+            head.getChildren().addAll(grow, ram, upd);
+        }
+        section.getChildren().addAll(head, grid);
+        return section;
+    }
+
+    /** Apply one heap size to every instance in a group. */
+    private void bulkSetRam(String group, List<Instance> items) {
+        Dialog<ButtonType> d = new Dialog<>();
+        d.setTitle("Set RAM for group");
+        d.setHeaderText("Apply heap size to all " + items.size() + " instance(s) in \"" + group + "\"");
+        Slider s = new Slider(1024, 16384, items.get(0).ramMb());
+        s.setPrefWidth(360);
+        s.getStyleClass().add("ram-slider");
+        s.setBlockIncrement(512);
+        s.setMajorTickUnit(2048);
+        s.setMinorTickCount(3);
+        s.setSnapToTicks(true);
+        s.setShowTickMarks(true);
+        Label val = new Label(snapRam(s.getValue()) + " MB");
+        val.getStyleClass().add("ram-value");
+        val.setMinWidth(80);
+        s.valueProperty().addListener((o, a, b) -> val.setText(snapRam(b.doubleValue()) + " MB"));
+        VBox box = new VBox(10, new Label("RAM"), new HBox(10, s, val));
+        box.setPadding(new Insets(12));
+        d.getDialogPane().setContent(box);
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.APPLY, ButtonType.CANCEL);
+        styleDialog(d);
+        if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.APPLY) {
+            int mb = snapRam(s.getValue());
+            try {
+                for (Instance inst : items) instanceManager.update(inst.withRam(mb));
+                showInstances();
+                alert(Alert.AlertType.INFORMATION, "RAM updated", "Set " + mb + " MB on " + items.size() + " instance(s).");
+            } catch (Exception ex) {
+                alert(Alert.AlertType.ERROR, "Failed", String.valueOf(ex.getMessage()));
+            }
+        }
+    }
+
+    /** Run "update all tracked mods" across every instance in a group, with one combined summary. */
+    private void bulkUpdateMods(String group, List<Instance> items) {
+        Thread t = new Thread(() -> {
+            int totUpdated = 0, totChecked = 0;
+            java.util.List<String> issues = new java.util.ArrayList<>();
+            for (Instance inst : items) {
+                try {
+                    int[] r = updateInstanceModsSync(inst, issues);
+                    totChecked += r[0];
+                    totUpdated += r[1];
+                } catch (Exception ex) {
+                    issues.add(inst.name() + " (" + ex.getMessage() + ")");
+                }
+            }
+            int ch = totChecked, up = totUpdated;
+            Platform.runLater(() -> {
+                showInstances();
+                alert(Alert.AlertType.INFORMATION, "Group update complete",
+                        "Group \"" + group + "\": checked " + ch + " tracked item(s) across " + items.size()
+                        + " instance(s); updated " + up + "."
+                        + (issues.isEmpty() ? "" : "\nSkipped: " + String.join(", ", issues)));
+            });
+        }, "bulk-update");
+        t.setDaemon(true);
+        t.start();
     }
 
     private Region featuredCard(Instance inst) {
@@ -780,6 +874,10 @@ public class MainApp extends Application {
         jvmF.setPromptText("-XX:+UseG1GC … (optional)");
         jvmF.setPrefWidth(360);
 
+        TextField groupF = new TextField(inst.groupOrNone());
+        groupF.setPromptText("e.g. Performance, Multiplayer (optional)");
+        groupF.setPrefWidth(280);
+
         Button saveSettings = new Button("Save Settings");
         saveSettings.getStyleClass().add("btn-filled");
         saveSettings.setOnAction(e -> {
@@ -788,7 +886,7 @@ public class MainApp extends Application {
                 int ramMb = snapRam(ramSlider.getValue());
                 int w = widthF.getText().isBlank() ? 0 : Integer.parseInt(widthF.getText().trim());
                 int h = heightF.getText().isBlank() ? 0 : Integer.parseInt(heightF.getText().trim());
-                instanceManager.update(inst.withSettings(nm, ramMb, w, h, fullF.isSelected(), jvmF.getText().trim()));
+                instanceManager.update(inst.withSettings(nm, ramMb, w, h, fullF.isSelected(), jvmF.getText().trim(), groupF.getText().trim()));
                 showInstanceDetail(currentInstance(inst));
             } catch (NumberFormatException nf) {
                 alert(Alert.AlertType.ERROR, "Invalid number", "Resolution must be whole numbers.");
@@ -818,6 +916,7 @@ public class MainApp extends Application {
                 settingRow("Resolution", resBox),
                 settingRow("", fullF),
                 settingRow("Extra JVM args", jvmF),
+                settingRow("Group", groupF),
                 saveSettings,
                 new Region(), optifine, optHelp,
                 new Region(), del);
@@ -1089,10 +1188,14 @@ public class MainApp extends Application {
         loader.getItems().addAll(Loader.VANILLA, Loader.FABRIC);
         loader.getSelectionModel().selectFirst();
 
+        TextField group = new TextField();
+        group.setPromptText("Group (optional) — e.g. Performance, Multiplayer");
+
         VBox box = new VBox(10,
                 new Label("Name"), name,
                 new Label("Version"), ver, snapshots, verCount,
-                new Label("Loader"), loader);
+                new Label("Loader"), loader,
+                new Label("Group"), group);
         box.setPadding(new Insets(12));
         d.getDialogPane().setContent(box);
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
@@ -1101,7 +1204,7 @@ public class MainApp extends Application {
         if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
             try {
                 String nm = name.getText().isBlank() ? (loader.getValue().display() + " " + ver.getValue()) : name.getText();
-                instanceManager.create(nm, ver.getValue(), loader.getValue());
+                instanceManager.create(nm, ver.getValue(), loader.getValue(), group.getText().trim());
                 showInstances();
             } catch (Exception ex) {
                 alert(Alert.AlertType.ERROR, "Create failed", ex.getMessage());
@@ -1872,38 +1975,15 @@ public class MainApp extends Application {
     private void updateAllMods(Instance inst) {
         Thread t = new Thread(() -> {
             try {
-                Path instDir = instanceManager.instanceDir(inst);
-                ModTracker tr = new ModTracker(instDir);
-                var entries = tr.list();
-                if (entries.isEmpty()) {
+                if (new ModTracker(instanceManager.instanceDir(inst)).list().isEmpty()) {
                     Platform.runLater(() -> alert(Alert.AlertType.INFORMATION, "No tracked mods",
                             "Nothing tracked yet. Content installed from Browse is tracked going forward — "
                             + "mods added before tracking existed won't update here."));
                     return;
                 }
-                int updated = 0, checked = 0;
                 java.util.List<String> issues = new java.util.ArrayList<>();
-                for (ModTracker.Entry e : entries) {
-                    try {
-                        ContentSource src = sourceForTracked(e.source());
-                        String loader = modLoaderTag(inst, e.type());
-                        ModrinthClient.ModFile pf = primaryFile(srcLatest(src, e.projectId(), inst.version(), loader));
-                        if (pf == null) { issues.add(e.name() + " (no compatible build)"); continue; }
-                        checked++;
-                        if (!pf.filename().equals(e.filename())) {
-                            Path dir = instDir.resolve(e.folder());
-                            Files.deleteIfExists(dir.resolve(e.filename()));
-                            Files.deleteIfExists(dir.resolve(e.filename() + ".disabled"));
-                            ModInstaller.install(src, e.projectId(), inst.version(), loader, dir, m -> {});
-                            tr.record(new ModTracker.Entry(e.projectId(), e.source(), e.type(), e.folder(),
-                                    pf.filename(), e.name()));
-                            updated++;
-                        }
-                    } catch (Exception ex) {
-                        issues.add(e.name());
-                    }
-                }
-                int up = updated, ch = checked;
+                int[] r = updateInstanceModsSync(inst, issues);
+                int ch = r[0], up = r[1];
                 Platform.runLater(() -> {
                     showInstanceDetail(currentInstance(inst));
                     alert(Alert.AlertType.INFORMATION, "Update complete",
@@ -1916,6 +1996,37 @@ public class MainApp extends Application {
         }, "update-mods");
         t.setDaemon(true);
         t.start();
+    }
+
+    /**
+     * Synchronously update one instance's tracked mods to their newest compatible builds.
+     * Returns {@code {checked, updated}}; appends skipped item names to {@code issues}. Runs on the
+     * caller's thread (always a background thread).
+     */
+    private int[] updateInstanceModsSync(Instance inst, java.util.List<String> issues) throws Exception {
+        Path instDir = instanceManager.instanceDir(inst);
+        ModTracker tr = new ModTracker(instDir);
+        int updated = 0, checked = 0;
+        for (ModTracker.Entry e : tr.list()) {
+            try {
+                ContentSource src = sourceForTracked(e.source());
+                String loader = modLoaderTag(inst, e.type());
+                ModrinthClient.ModFile pf = primaryFile(srcLatest(src, e.projectId(), inst.version(), loader));
+                if (pf == null) { issues.add(e.name() + " (no compatible build)"); continue; }
+                checked++;
+                if (!pf.filename().equals(e.filename())) {
+                    Path dir = instDir.resolve(e.folder());
+                    Files.deleteIfExists(dir.resolve(e.filename()));
+                    Files.deleteIfExists(dir.resolve(e.filename() + ".disabled"));
+                    ModInstaller.install(src, e.projectId(), inst.version(), loader, dir, m -> {});
+                    tr.record(new ModTracker.Entry(e.projectId(), e.source(), e.type(), e.folder(), pf.filename(), e.name()));
+                    updated++;
+                }
+            } catch (Exception ex) {
+                issues.add(e.name());
+            }
+        }
+        return new int[]{checked, updated};
     }
 
     private static ModrinthClient.ModVersion srcLatest(ContentSource src, String projectId, String gv, String loader)

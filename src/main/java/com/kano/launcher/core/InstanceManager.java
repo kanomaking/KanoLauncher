@@ -45,11 +45,17 @@ public final class InstanceManager {
 
     /** Create a new instance with the default heap size. */
     public Instance create(String name, String version, Loader loader) throws Exception {
+        return create(name, version, loader, "");
+    }
+
+    /** Create a new instance, placing it in {@code group} (blank = ungrouped). */
+    public Instance create(String name, String version, Loader loader, String group) throws Exception {
         String clean = name == null || name.isBlank() ? "Instance" : name.trim();
         String dirName = uniqueDir(sanitize(clean));
         Files.createDirectories(instancesDir.resolve(dirName));
         Instance i = new Instance(clean, version, loader, dirName,
-                System.currentTimeMillis(), 0L, DEFAULT_RAM_MB, "grass", 0, 0, false, "");
+                System.currentTimeMillis(), 0L, DEFAULT_RAM_MB, "grass", 0, 0, false, "",
+                group == null ? "" : group.trim());
         instances.add(i);
         save();
         return i;

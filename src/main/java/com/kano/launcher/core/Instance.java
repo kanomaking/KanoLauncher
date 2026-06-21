@@ -15,6 +15,7 @@ package com.kano.launcher.core;
  * @param height          window height in px (0 = game default)
  * @param fullscreen      launch fullscreen
  * @param jvmArgs         extra JVM args (space-separated), may be empty
+ * @param group           optional group/tag for organizing instances (null/blank = ungrouped)
  */
 public record Instance(
         String name,
@@ -28,7 +29,8 @@ public record Instance(
         int width,
         int height,
         boolean fullscreen,
-        String jvmArgs
+        String jvmArgs,
+        String group
 ) {
     public String iconOrDefault() {
         return iconKey == null || iconKey.isBlank() ? "grass" : iconKey;
@@ -38,24 +40,33 @@ public record Instance(
         return jvmArgs == null ? "" : jvmArgs;
     }
 
+    /** Group label, or "" when ungrouped. */
+    public String groupOrNone() {
+        return group == null || group.isBlank() ? "" : group.trim();
+    }
+
     public Instance withLastPlayed(long epoch) {
-        return new Instance(name, version, loader, dirName, createdEpoch, epoch, ramMb, iconKey, width, height, fullscreen, jvmArgs);
+        return new Instance(name, version, loader, dirName, createdEpoch, epoch, ramMb, iconKey, width, height, fullscreen, jvmArgs, group);
     }
 
     public Instance withRam(int mb) {
-        return new Instance(name, version, loader, dirName, createdEpoch, lastPlayedEpoch, mb, iconKey, width, height, fullscreen, jvmArgs);
+        return new Instance(name, version, loader, dirName, createdEpoch, lastPlayedEpoch, mb, iconKey, width, height, fullscreen, jvmArgs, group);
     }
 
     public Instance withIconKey(String key) {
-        return new Instance(name, version, loader, dirName, createdEpoch, lastPlayedEpoch, ramMb, key, width, height, fullscreen, jvmArgs);
+        return new Instance(name, version, loader, dirName, createdEpoch, lastPlayedEpoch, ramMb, key, width, height, fullscreen, jvmArgs, group);
     }
 
     public Instance withName(String newName) {
-        return new Instance(newName, version, loader, dirName, createdEpoch, lastPlayedEpoch, ramMb, iconKey, width, height, fullscreen, jvmArgs);
+        return new Instance(newName, version, loader, dirName, createdEpoch, lastPlayedEpoch, ramMb, iconKey, width, height, fullscreen, jvmArgs, group);
+    }
+
+    public Instance withGroup(String newGroup) {
+        return new Instance(name, version, loader, dirName, createdEpoch, lastPlayedEpoch, ramMb, iconKey, width, height, fullscreen, jvmArgs, newGroup);
     }
 
     /** Apply the editable settings block in one go. */
-    public Instance withSettings(String name, int ramMb, int width, int height, boolean fullscreen, String jvmArgs) {
-        return new Instance(name, version, loader, dirName, createdEpoch, lastPlayedEpoch, ramMb, iconKey, width, height, fullscreen, jvmArgs);
+    public Instance withSettings(String name, int ramMb, int width, int height, boolean fullscreen, String jvmArgs, String group) {
+        return new Instance(name, version, loader, dirName, createdEpoch, lastPlayedEpoch, ramMb, iconKey, width, height, fullscreen, jvmArgs, group);
     }
 }

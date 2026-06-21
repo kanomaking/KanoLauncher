@@ -99,6 +99,13 @@
 }
 .brand-word { -fx-text-fill: #FFFFFF; -fx-font-size: 17px; -fx-font-weight: bold; }
 
+.group-title {
+    -fx-text-fill: -kano-accent-bright;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 0 2 2;
+}
+
 .nav-item {
     -fx-alignment: center-left;
     -fx-spacing: 14;
