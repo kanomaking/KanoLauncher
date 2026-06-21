@@ -5,6 +5,7 @@ import com.kano.launcher.core.AccountManager;
 import com.kano.launcher.core.Config;
 import com.kano.launcher.core.ContentSource;
 import com.kano.launcher.core.CurseForgeClient;
+import com.kano.launcher.core.Downloader;
 import com.kano.launcher.core.Instance;
 import com.kano.launcher.core.FabricSupport;
 import com.kano.launcher.core.GameInstaller;
@@ -13,6 +14,7 @@ import com.kano.launcher.core.InstanceManager;
 import com.kano.launcher.core.JreProvider;
 import com.kano.launcher.core.Loader;
 import com.kano.launcher.core.ModInstaller;
+import com.kano.launcher.core.ModpackInstaller;
 import com.kano.launcher.core.ModTracker;
 import com.kano.launcher.core.ModrinthClient;
 import com.kano.launcher.core.Stats;
@@ -1509,6 +1511,10 @@ public class MainApp extends Application {
         perfBtn.getStyleClass().add("btn-outline");
         perfBtn.setOnAction(e -> installPerfPack(instPick.getValue(), perfBtn));
 
+        Button importPack = new Button("📦 Import .mrpack file");
+        importPack.getStyleClass().add("btn-outline");
+        importPack.setOnAction(e -> importMrpackFile());
+
         Label srcLbl = new Label("Source:");
         srcLbl.getStyleClass().add("card-sub");
         Label typeLbl = new Label("Type:");
@@ -1517,7 +1523,7 @@ public class MainApp extends Application {
         sortLbl.getStyleClass().add("card-sub");
         HBox bar1 = new HBox(10, instPick, q);
         bar1.setAlignment(Pos.CENTER_LEFT);
-        HBox bar2 = new HBox(10, srcLbl, sourceBox, typeLbl, typeBox, sortLbl, sortBox, perfBtn);
+        HBox bar2 = new HBox(10, srcLbl, sourceBox, typeLbl, typeBox, sortLbl, sortBox, perfBtn, importPack);
         bar2.setAlignment(Pos.CENTER_LEFT);
         page.getChildren().addAll(title, bar1, bar2, scroll);
         content.getChildren().setAll(page);
@@ -1552,7 +1558,7 @@ public class MainApp extends Application {
             case "resourcepack" -> "resourcepacks";
             case "shader" -> "shaderpacks";
             case "datapack" -> "datapacks"; // holding folder (copy into a world's datapacks/ to use)
-            default -> null; // modpack needs .mrpack extraction — not yet
+            default -> null; // modpack isn't a single-file install — handled by installModpack()
         };
     }
 
@@ -1632,6 +1638,7 @@ public class MainApp extends Application {
     }
 
     private void installMod(ModrinthClient.Hit hit, Instance inst, String type, Button install) {
+        if ("modpack".equals(type)) { installModpack(hit, inst, install); return; }
         String folder = typeFolder(type);
         if (folder == null) {
             alert(Alert.AlertType.INFORMATION, "Not supported yet",
@@ -1706,6 +1713,90 @@ public class MainApp extends Application {
         }, "perf-pack");
         t.setDaemon(true);
         t.start();
+    }
+
+    // ---- modpack (.mrpack) import ----
+
+    /**
+     * Install a Modrinth modpack from a Browse hit: resolve its newest {@code .mrpack} for the
+     * selected instance's version, download it, then build a fresh instance from the pack's own
+     * declared MC + loader and unpack its files + overrides. Modrinth-only (CurseForge packs aren't
+     * the .mrpack format and aren't supported here).
+     */
+    private void installModpack(ModrinthClient.Hit hit, Instance ctx, Button install) {
+        if (instanceManager == null) { alert(Alert.AlertType.ERROR, "Error", initError); return; }
+        if (browseSource != null && !"modrinth".equals(browseSource.id())) {
+            alert(Alert.AlertType.INFORMATION, "Modrinth only",
+                    "Modpack import works with Modrinth's .mrpack format only.\n\n"
+                    + "For a CurseForge pack, download its .mrpack (or a Modrinth export) and use \"Import .mrpack file\".");
+            return;
+        }
+        install.setDisable(true);
+        install.setText("Importing…");
+        Thread t = new Thread(() -> {
+            try {
+                ModrinthClient mc = new ModrinthClient();
+                var vers = mc.versions(hit.projectId(), ctx.version(), null); // newest pack build for this MC version
+                ModrinthClient.ModFile pack = primaryFile(vers.isEmpty() ? null : vers.get(0));
+                if (pack == null || pack.url() == null || pack.url().isBlank())
+                    throw new RuntimeException("No downloadable .mrpack for " + hit.title() + " on " + ctx.version() + ".");
+                Path mrpack = resolveDataDir().resolve("cache").resolve("modpacks").resolve(pack.filename());
+                Downloader.download(pack.url(), null, mrpack);
+                doModpackImport(mrpack, hit.title(), () -> {
+                    install.setDisable(false);
+                    install.setText("Install");
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    install.setDisable(false);
+                    install.setText("Install");
+                    alert(Alert.AlertType.ERROR, "Modpack import failed", String.valueOf(ex.getMessage()));
+                });
+            }
+        }, "modpack-install");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Import a local .mrpack the user picked from disk (offline / CurseForge-exported packs). */
+    private void importMrpackFile() {
+        if (instanceManager == null) { alert(Alert.AlertType.ERROR, "Error", initError); return; }
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Import modpack (.mrpack)");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Modrinth modpack", "*.mrpack"));
+        java.io.File f = fc.showOpenDialog(stage);
+        if (f == null) return;
+        Thread t = new Thread(() -> doModpackImport(f.toPath(), f.getName().replaceAll("\\.mrpack$", ""), null),
+                "modpack-import-file");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Shared back half: read index, create the instance, unpack, report. Runs off the FX thread. */
+    private void doModpackImport(Path mrpack, String fallbackName, Runnable onReset) {
+        try {
+            ModpackInstaller.Index idx = ModpackInstaller.readIndex(mrpack);
+            String name = idx.name() != null && !idx.name().isBlank() ? idx.name() : fallbackName;
+            Instance inst = instanceManager.create(name, idx.mcVersion(), idx.loader());
+            int n = ModpackInstaller.installInto(mrpack, idx, instanceManager.instanceDir(inst), msg -> {});
+            boolean bootable = idx.loader() == Loader.VANILLA || idx.loader() == Loader.FABRIC;
+            Platform.runLater(() -> {
+                if (onReset != null) onReset.run();
+                showInstances();
+                String warn = bootable ? "" :
+                        "\n\nNote: this pack needs " + idx.loader().display()
+                        + ", which isn't bootable yet — the files are installed, but it won't launch until "
+                        + idx.loader().display() + " support lands.";
+                alert(Alert.AlertType.INFORMATION, "Modpack imported",
+                        name + " → new " + idx.loader().display() + " " + idx.mcVersion() + " instance.\n"
+                        + n + " file(s) installed (mods + overrides)." + warn);
+            });
+        } catch (Exception ex) {
+            Platform.runLater(() -> {
+                if (onReset != null) onReset.run();
+                alert(Alert.AlertType.ERROR, "Modpack import failed", String.valueOf(ex.getMessage()));
+            });
+        }
     }
 
     private void setupOptifine(Instance inst) {
