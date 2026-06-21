@@ -4,7 +4,9 @@ import com.kano.launcher.auth.MicrosoftAuth;
 import com.kano.launcher.core.AccountManager;
 import com.kano.launcher.core.Instance;
 import com.kano.launcher.core.GameInstaller;
+import com.kano.launcher.core.GameLauncher;
 import com.kano.launcher.core.InstanceManager;
+import com.kano.launcher.core.JreProvider;
 import com.kano.launcher.core.Loader;
 import com.kano.launcher.core.VersionDetail;
 import com.kano.launcher.core.VersionManifest;
@@ -316,7 +318,7 @@ public class MainApp extends Application {
         Label sub = new Label("Last played: " + lastPlayed(inst));
         sub.getStyleClass().add("card-sub");
         ProgressBar bar = progress(0.0);
-        play.setOnAction(e -> onInstall(inst, bar));
+        play.setOnAction(e -> onPlay(inst, bar));
 
         VBox info = new VBox(6, titleRow, meta, sub, bar);
         HBox.setHgrow(info, Priority.ALWAYS);
@@ -346,7 +348,7 @@ public class MainApp extends Application {
         Button play = new Button("▶");
         play.getStyleClass().add("play-circle");
         play.setStyle("-fx-min-width:40; -fx-min-height:40; -fx-max-width:40; -fx-max-height:40; -fx-font-size:15px;");
-        play.setOnAction(e -> onInstall(inst, bar));
+        play.setOnAction(e -> onPlay(inst, bar));
         row.getChildren().add(play);
 
         StackPane card = new StackPane(row, editIcon(inst));
@@ -394,7 +396,7 @@ public class MainApp extends Application {
                 .format(Instant.ofEpochMilli(inst.lastPlayedEpoch()));
     }
 
-    private void onInstall(Instance inst, ProgressBar bar) {
+    private void onPlay(Instance inst, ProgressBar bar) {
         if (instanceManager == null) { alert(Alert.AlertType.ERROR, "Error", initError); return; }
         Thread t = new Thread(() -> {
             try {
@@ -404,25 +406,53 @@ public class MainApp extends Application {
                 VersionManifest.VersionEntry entry = vm.find(inst.version());
                 if (entry == null) throw new RuntimeException("Version " + inst.version() + " not in manifest.");
                 VersionDetail vd = VersionDetail.fetch(entry);
-                GameInstaller gi = new GameInstaller(resolveDataDir());
-                gi.install(vd, (d, tot, label) -> {
+                Path dataDir = resolveDataDir();
+
+                // 1. Download everything (cached after first time).
+                new GameInstaller(dataDir).install(vd, (d, tot, label) -> {
                     if (d % 25 == 0 || d == tot) {
                         double frac = tot == 0 ? 0 : (double) d / tot;
                         Platform.runLater(() -> bar.setProgress(frac));
                     }
                 });
-                Platform.runLater(() -> {
-                    bar.setProgress(1.0);
-                    alert(Alert.AlertType.INFORMATION, "Files ready",
-                            "Downloaded " + inst.version() + " (" + inst.loader().display() + ").\n\n"
-                            + "Booting the game is the final step — coming next.");
-                });
+                Platform.runLater(() -> bar.setProgress(1.0));
+
+                // 2. Make sure the right Java is available (downloads from Adoptium if needed).
+                Path javaExe = JreProvider.javaExecutable(dataDir, vd.javaMajor(), msg -> {});
+
+                // 3. Launch (offline mode — works before app approval).
+                String player = (accountManager != null && !accountManager.list().isEmpty())
+                        ? accountManager.list().get(0).username() : "Player";
+                Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player);
+
+                // Mark last-played and refresh the view.
+                instanceManager.update(new Instance(inst.name(), inst.version(), inst.loader(),
+                        inst.dirName(), inst.createdEpoch(), System.currentTimeMillis(), inst.ramMb()));
+                Platform.runLater(this::showInstances);
+
+                // Surface an early crash with the log tail; silent on normal exit.
+                int code = proc.waitFor();
+                if (code != 0) {
+                    String tail = readTail(dataDir.resolve("instances").resolve(inst.dirName())
+                            .resolve("launcher-run.log"), 1800);
+                    Platform.runLater(() -> alert(Alert.AlertType.ERROR,
+                            "Game exited (code " + code + ")", tail));
+                }
             } catch (Exception ex) {
-                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Install failed", String.valueOf(ex.getMessage())));
+                Platform.runLater(() -> alert(Alert.AlertType.ERROR, "Launch failed", String.valueOf(ex.getMessage())));
             }
-        }, "install-" + inst.dirName());
+        }, "play-" + inst.dirName());
         t.setDaemon(true);
         t.start();
+    }
+
+    private String readTail(Path f, int max) {
+        try {
+            String s = Files.readString(f);
+            return s.length() > max ? "…" + s.substring(s.length() - max) : s;
+        } catch (Exception e) {
+            return "(no launch log found)";
+        }
     }
 
     // ---- create / edit dialogs ----
