@@ -859,10 +859,23 @@ public class MainApp extends Application {
         HBox header = new HBox(10, g, add);
         header.setAlignment(Pos.CENTER_LEFT);
         if ("mods".equals(folder)) {
-            Button updateAll = new Button("Update All");
-            updateAll.getStyleClass().add("btn-outline");
+            Button updateAll = new Button("⬆ Update All");
+            updateAll.getStyleClass().add("btn-update");
             updateAll.setOnAction(e -> updateAllMods(inst));
+            updateAll.setVisible(false);
+            updateAll.setManaged(false); // takes no layout space until we know updates exist
             header.getChildren().add(1, updateAll); // [spacer, Update All, + Add]
+            // Check sources off-thread; only reveal the button if something is actually out of date.
+            Thread chk = new Thread(() -> {
+                int n = countModUpdates(inst);
+                if (n > 0) Platform.runLater(() -> {
+                    updateAll.setText("⬆ Update All (" + n + ")");
+                    updateAll.setVisible(true);
+                    updateAll.setManaged(true);
+                });
+            }, "mod-update-check");
+            chk.setDaemon(true);
+            chk.start();
         }
         VBox listBox = new VBox(8);
         populateFolderItems(inst, folder, listBox);
@@ -1722,6 +1735,48 @@ public class MainApp extends Application {
         return v.files().stream().filter(ModrinthClient.ModFile::primary).findFirst().orElse(v.files().get(0));
     }
 
+    /** Pick the right content source for a tracked entry's origin id ("curseforge"/"modrinth"). */
+    private ContentSource sourceForTracked(String source) {
+        return "curseforge".equals(source)
+                ? new CurseForgeClient(config != null ? config.curseforgeApiKey() : "")
+                : new ModrinthClient();
+    }
+
+    /** Loader facet to query for an entry type, based on the instance's loader. */
+    private static String modLoaderTag(Instance inst, String type) {
+        if (!"mod".equals(type) && !"modpack".equals(type)) return null;
+        return switch (inst.loader()) {
+            case QUILT -> "quilt";
+            case FORGE -> "forge";
+            case NEOFORGE -> "neoforge";
+            default -> "fabric"; // FABRIC, or a vanilla instance that somehow has a tracked mod
+        };
+    }
+
+    /**
+     * Background-safe (no UI): how many tracked mods have a newer compatible build than what's
+     * installed. Uses the same source/loader resolution as {@link #updateAllMods} so the badge
+     * count and the actual update agree. Returns 0 on any error so the button just stays hidden.
+     */
+    private int countModUpdates(Instance inst) {
+        try {
+            ModTracker tr = new ModTracker(instanceManager.instanceDir(inst));
+            int n = 0;
+            for (ModTracker.Entry e : tr.list()) {
+                try {
+                    ContentSource src = sourceForTracked(e.source());
+                    String loader = modLoaderTag(inst, e.type());
+                    ModrinthClient.ModFile pf = primaryFile(srcLatest(src, e.projectId(), inst.version(), loader));
+                    if (pf != null && !pf.filename().equals(e.filename())) n++;
+                } catch (Exception ignored) {
+                }
+            }
+            return n;
+        } catch (Exception ex) {
+            return 0;
+        }
+    }
+
     /** Re-install every tracked item to its newest compatible version (replacing the old file). */
     private void updateAllMods(Instance inst) {
         Thread t = new Thread(() -> {
@@ -1739,10 +1794,8 @@ public class MainApp extends Application {
                 java.util.List<String> issues = new java.util.ArrayList<>();
                 for (ModTracker.Entry e : entries) {
                     try {
-                        ContentSource src = "curseforge".equals(e.source())
-                                ? new CurseForgeClient(config != null ? config.curseforgeApiKey() : "")
-                                : new ModrinthClient();
-                        String loader = ("mod".equals(e.type()) || "modpack".equals(e.type())) ? "fabric" : null;
+                        ContentSource src = sourceForTracked(e.source());
+                        String loader = modLoaderTag(inst, e.type());
                         ModrinthClient.ModFile pf = primaryFile(srcLatest(src, e.projectId(), inst.version(), loader));
                         if (pf == null) { issues.add(e.name() + " (no compatible build)"); continue; }
                         checked++;

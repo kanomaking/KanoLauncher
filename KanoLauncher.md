@@ -118,7 +118,7 @@ Modrinth covers almost everything you want. CurseForge is added **later**, just 
   - This is required because Windows file-locks the running app and you can't overwrite it in place.
   - The bootstrapper itself is never updated (it's the stable outer shell). With the `.msi` install model, self-update only the inner app jars, or re-run the installer for major releases.
 - **Minecraft version updates:** poll the Mojang version manifest daily; show a badge for new releases.
-- **Mod updates:** per-mod "update available" indicator + a manual refresh button.
+- **Mod updates:** ✅ shipped — per-instance tracking (`.kano-mods.json`) + a gold **"Update All (N)"** button that appears only when newer compatible builds exist (see §11). *Still wanted: a per-mod row indicator/button so individual mods can be updated without the bulk action.*
 
 ### 4.8 Multi-Account & Multi-Instance — DEFERRED
 - v1 is single-account, single running instance. Add later.
@@ -249,7 +249,7 @@ The launcher should make Minecraft run as fast as possible out of the box — hi
 - 🟢 **Exact-compatibility browsing**: only show mods / resource packs / shaders compatible with the instance's exact version **and** loader. Incompatible content doesn't appear (filter by declared compatibility — see §4.3 honesty note).
 - 🟢 **One-click dependency resolution**: required libs/APIs/sub-deps added automatically in the background (Modrinth-only for clean graphs in v1 — §4.3/§4.4).
 - 🟡 **Conflict detection + suggestions**: warn when Mod A breaks Mod B; suggest alternatives/reordering (scope to what metadata supports — declared incompatibilities, dup mod-ids; "suggest alternatives" is best-effort).
-- 🟡 **Bulk operations**: update all mods in one click; export an instance as a modpack with **version-lock** files; **clone instance keeping only the mod list** (not worlds).
+- 🟡 **Bulk operations**: ✅ *update all mods in one click* shipped (gold conditional "Update All" button, §11). Remaining: export an instance as a modpack with **version-lock** files; **clone instance keeping only the mod list** (not worlds).
 - 🟢 **Drag-and-drop offline content**: drop any jar/pack into the instance folder and it appears as a selectable mod/resource pack — no manual file management (§4.3 local-resources).
 
 ### Accounts
@@ -294,6 +294,8 @@ The launcher is a working JavaFX app (`gradlew run`). Implemented and verified:
 **Content:** Modrinth browse (popular list, debounced search-as-you-type, sort + type filters, pagination, mod icons w/ WebP decode, gold download counts, about page) + install with recursive deps. CurseForge as a second source via `ContentSource` (needs user's own API key — user's key currently 403s on CF's side). One-click Performance Pack (Sodium/Lithium/etc.).
 
 **Instances:** uniform cards (click to open), tabbed detail (Mods / Resource Packs / Shaders / Data Packs / Worlds / Settings), per-type "+ Add" → Browse preselected, enable/disable + remove per file, install routed by type. Per-instance settings: rename, RAM slider, resolution, fullscreen, extra JVM args, profile-block icon. Worlds tab: list + quick-launch + open folder + delete. OptiFine = manual 2-jar flow.
+
+**Mod updates & tracking:** every install (Browse + Performance Pack) is recorded to `<instanceDir>/.kano-mods.json` (`ModTracker`: projectId, source, type, folder, filename, name). The Mods tab runs a background check on open and shows a **gold "⬆ Update All (N)" button only when N>1 builds are actually out of date** (hidden + unmanaged otherwise). Clicking it re-resolves each tracked mod against its source (Modrinth/CurseForge) with the instance's real loader, deletes the old jar, installs the newer build, and re-records. Badge count and the update action share `sourceForTracked()` + `modLoaderTag()` so they agree. *Caveat: only mods installed via Browse from now on are tracked — pre-existing mods must be reinstalled once to appear.*
 
 **Customization:** changeable launcher name; **full accent theming** (every accent color — solid, glow, border, tint — flows from looked-up CSS vars set live by `applyTheme()`); 5 presets + **custom color picker**; **background image upload + size + visibility sliders**; Ctrl+K command palette; themed dialogs; stats bar (worlds/playtime/launches). Maximize keeps the taskbar visible.
 
