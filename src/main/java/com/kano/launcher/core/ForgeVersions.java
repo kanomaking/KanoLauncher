@@ -56,6 +56,16 @@ public final class ForgeVersions {
         return best;
     }
 
+    /**
+     * True when NeoForge is the better loader choice for this MC version. NeoForge forked at 1.20.2
+     * and most Forge-family performance mods (Embeddium, Lithium, C2ME, …) moved there afterwards, so
+     * Forge on 1.20.2+ is performance-starved. 1.20.1 and earlier keep a healthy Forge mod scene.
+     */
+    public static boolean neoForgePreferred(String mcVersion) {
+        try { return compareVersions(mcVersion, "1.20.2") >= 0; }
+        catch (Exception e) { return false; }
+    }
+
     /** MC "1.21.1" → "21.1.", "1.21" → "21.0.", "1.20.4" → "20.4." */
     static String neoForgePrefix(String mcVersion) {
         String[] p = mcVersion.split("\\.");

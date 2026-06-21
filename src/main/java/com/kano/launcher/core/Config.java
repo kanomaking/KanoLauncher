@@ -30,6 +30,7 @@ public final class Config {
     private boolean minimizeOnPlay = false;
     private boolean confirmDelete = true;
     private boolean animations = true;
+    private boolean autoNeoForge = true;
     private List<NameSegment> nameSegments = new ArrayList<>();
 
     public Config(Path dataDir) {
@@ -111,6 +112,11 @@ public final class Config {
 
     public void setAnimations(boolean v) { this.animations = v; save(); }
 
+    /** When true, picking Forge for a NeoForge-era version offers to switch to NeoForge. */
+    public boolean autoNeoForge() { return autoNeoForge; }
+
+    public void setAutoNeoForge(boolean v) { this.autoNeoForge = v; save(); }
+
     /** Coloured runs of the brand name; defaults to the whole name in white if unset. */
     public List<NameSegment> nameSegments() {
         if (nameSegments == null || nameSegments.isEmpty())
@@ -142,6 +148,7 @@ public final class Config {
                 if (o != null && o.has("minimizeOnPlay")) minimizeOnPlay = o.get("minimizeOnPlay").getAsBoolean();
                 if (o != null && o.has("confirmDelete")) confirmDelete = o.get("confirmDelete").getAsBoolean();
                 if (o != null && o.has("animations")) animations = o.get("animations").getAsBoolean();
+                if (o != null && o.has("autoNeoForge")) autoNeoForge = o.get("autoNeoForge").getAsBoolean();
                 if (o != null && o.has("nameSegments")) {
                     nameSegments = new Gson().fromJson(o.get("nameSegments"),
                             new TypeToken<ArrayList<NameSegment>>() {}.getType());
@@ -167,6 +174,7 @@ public final class Config {
             o.addProperty("minimizeOnPlay", minimizeOnPlay);
             o.addProperty("confirmDelete", confirmDelete);
             o.addProperty("animations", animations);
+            o.addProperty("autoNeoForge", autoNeoForge);
             o.add("nameSegments", new Gson().toJsonTree(nameSegments));
             Path tmp = file.resolveSibling("config.json.tmp");
             Files.writeString(tmp, new Gson().toJson(o), StandardCharsets.UTF_8);

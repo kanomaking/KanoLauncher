@@ -106,6 +106,28 @@
     -fx-padding: 4 0 2 2;
 }
 
+/* sliding on/off switch */
+.switch-track {
+    -fx-min-width: 46; -fx-pref-width: 46; -fx-max-width: 46;
+    -fx-min-height: 24; -fx-pref-height: 24; -fx-max-height: 24;
+    -fx-background-color: #2a2c34;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-border-color: -kano-border;
+    -fx-padding: 3;
+    -fx-cursor: hand;
+}
+.switch-on {
+    -fx-background-color: -kano-accent;
+    -fx-border-color: -kano-accent-bright;
+    -fx-effect: dropshadow(gaussian, -kano-glow, 10, 0.3, 0, 0);
+}
+.switch-thumb {
+    -fx-min-width: 16; -fx-min-height: 16; -fx-max-width: 16; -fx-max-height: 16;
+    -fx-background-color: #f2f2f2;
+    -fx-background-radius: 8;
+}
+
 .nav-item {
     -fx-alignment: center-left;
     -fx-spacing: 14;

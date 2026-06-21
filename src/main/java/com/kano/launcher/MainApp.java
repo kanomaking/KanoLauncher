@@ -8,6 +8,7 @@ import com.kano.launcher.core.CurseForgeClient;
 import com.kano.launcher.core.Downloader;
 import com.kano.launcher.core.Instance;
 import com.kano.launcher.core.FabricSupport;
+import com.kano.launcher.core.ForgeVersions;
 import com.kano.launcher.core.GameInstaller;
 import com.kano.launcher.core.GameLauncher;
 import com.kano.launcher.core.InstanceManager;
@@ -997,6 +998,24 @@ public class MainApp extends Application {
         HBox actionRow = new HBox(10, hOpen, hClone, hExport);
         actionRow.setAlignment(Pos.CENTER_LEFT);
 
+        // ---- mod-profile switches: quick on/off without touching individual mods ----
+        boolean baseOn = allModsDisabled(inst);
+        boolean optOn = optimizationOnly(inst);
+        Label sw1Lbl = new Label("Disable all mods (base game)");
+        Label sw2Lbl = new Label("Optimization mods only");
+        HBox sw1 = new HBox(10, toggleSwitch(baseOn, v -> {
+            setAllModsDisabled(inst, v);
+            showInstanceDetail(currentInstance(inst));
+        }), sw1Lbl);
+        sw1.setAlignment(Pos.CENTER_LEFT);
+        HBox sw2 = new HBox(10, toggleSwitch(optOn, v -> {
+            setOptimizationOnly(inst, v);
+            showInstanceDetail(currentInstance(inst));
+        }), sw2Lbl);
+        sw2.setAlignment(Pos.CENTER_LEFT);
+        HBox profileRow = new HBox(28, sw1, sw2);
+        profileRow.setAlignment(Pos.CENTER_LEFT);
+
         // Profile-icon picker
         Label profLbl = new Label("Profile Icon");
         profLbl.getStyleClass().add("card-title-sm");
@@ -1142,7 +1161,7 @@ public class MainApp extends Application {
                 tab("Settings", settingsScroll));
         VBox.setVgrow(tabs, Priority.ALWAYS);
 
-        page.getChildren().addAll(header, actionRow, tabs);
+        page.getChildren().addAll(header, actionRow, profileRow, tabs);
         content.getChildren().setAll(page);
     }
 
@@ -1452,11 +1471,26 @@ public class MainApp extends Application {
             ver.getItems().setAll(ids);
             if (!ver.getItems().isEmpty()) ver.getSelectionModel().selectFirst();
             verCount.setText(versionManifest != null
-                    ? ids.size() + " versions available"
-                    : "Offline — showing a short fallback list");
+                    ? ids.size() + " versions available (latest: " + versionManifest.latestRelease() + ")"
+                    : "Loading the full version list…");
         };
         snapshots.setOnAction(e -> fillVersions.run());
         fillVersions.run();
+        // If the manifest hasn't finished loading yet (dialog opened early), fetch it now and refill —
+        // otherwise the user only sees the short offline fallback (no latest releases / snapshots).
+        if (versionManifest == null) {
+            Thread vt = new Thread(() -> {
+                try {
+                    VersionManifest vm = VersionManifest.fetch();
+                    versionManifest = vm;
+                    Platform.runLater(fillVersions);
+                } catch (Exception ignored) {
+                    Platform.runLater(() -> verCount.setText("Offline — showing a short fallback list"));
+                }
+            }, "version-manifest-dialog");
+            vt.setDaemon(true);
+            vt.start();
+        }
 
         ChoiceBox<Loader> loader = new ChoiceBox<>();
         loader.getItems().addAll(Loader.VANILLA, Loader.FABRIC, Loader.NEOFORGE, Loader.FORGE);
@@ -1481,8 +1515,28 @@ public class MainApp extends Application {
 
         if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
             try {
-                String nm = name.getText().isBlank() ? (loader.getValue().display() + " " + ver.getValue()) : name.getText();
-                Instance created = instanceManager.create(nm, ver.getValue(), loader.getValue(), group.getText().trim());
+                Loader chosen = loader.getValue();
+                String version = ver.getValue();
+                // Auto-route Forge → NeoForge when Forge would be performance-starved (1.20.2+).
+                if (chosen == Loader.FORGE && ForgeVersions.neoForgePreferred(version)
+                        && (config == null || config.autoNeoForge())) {
+                    ButtonType useNeo = new ButtonType("Use NeoForge (recommended)",
+                            javafx.scene.control.ButtonBar.ButtonData.YES);
+                    ButtonType keepForge = new ButtonType("Keep Forge",
+                            javafx.scene.control.ButtonBar.ButtonData.NO);
+                    Alert a = new Alert(Alert.AlertType.CONFIRMATION,
+                            "On " + version + ", Forge is missing most performance mods — Embeddium, Lithium, "
+                            + "C2ME and others moved to NeoForge after 1.20.1. NeoForge runs the same mods and "
+                            + "gets far higher FPS.\n\nCreate this as NeoForge instead?",
+                            useNeo, keepForge, ButtonType.CANCEL);
+                    a.setHeaderText("NeoForge is faster for " + version);
+                    styleDialog(a);
+                    ButtonType res = a.showAndWait().orElse(ButtonType.CANCEL);
+                    if (res == ButtonType.CANCEL) return;
+                    if (res == useNeo) chosen = Loader.NEOFORGE;
+                }
+                String nm = name.getText().isBlank() ? (chosen.display() + " " + version) : name.getText();
+                Instance created = instanceManager.create(nm, version, chosen, group.getText().trim());
                 if (config != null && config.defaultRamMb() != 4096)
                     instanceManager.update(created.withRam(config.defaultRamMb()));
                 showInstances();
@@ -1578,6 +1632,97 @@ public class MainApp extends Application {
     }
 
     /** List files in an instance subfolder; Remove deletes the file. */
+    // ---- mod-profile switches ----
+
+    /** A small sliding on/off switch. Clicking calls {@code onChange} with the new state. */
+    private Region toggleSwitch(boolean on, java.util.function.Consumer<Boolean> onChange) {
+        Region thumb = new Region();
+        thumb.getStyleClass().add("switch-thumb");
+        StackPane track = new StackPane(thumb);
+        track.getStyleClass().add("switch-track");
+        if (on) track.getStyleClass().add("switch-on");
+        StackPane.setAlignment(thumb, on ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+        track.setOnMouseClicked(e -> onChange.accept(!on));
+        return track;
+    }
+
+    // Filename keywords identifying performance/optimization mods + the common dependencies they
+    // need (kept enabled so the perf stack still loads). Matched against the separator-stripped name.
+    private static final String[] OPT_KEYWORDS = {
+            "sodium", "sodiumextra", "reesessodiumoptions", "embeddium", "lithium", "ferrite", "modernfix",
+            "scalablelux", "c2me", "moreculling", "cullleaves", "entityculling", "immediatelyfast",
+            "dynamicfps", "threadtweak", "krypton", "debugify", "fastquit", "fastipping",
+            "enhancedblockentities", "vmpfabric",
+            "fabricapi", "fabriclanguagekotlin", "clothconfig", "architectury", "indium", "mixinextras"};
+
+    private static boolean isOptMod(String filename) {
+        String n = filename.toLowerCase().replaceAll("[^a-z0-9]", "");
+        for (String k : OPT_KEYWORDS) if (n.contains(k)) return true;
+        return false;
+    }
+
+    private List<Path> modFiles(Instance inst) {
+        Path mods = instanceManager.instanceDir(inst).resolve("mods");
+        List<Path> out = new ArrayList<>();
+        if (Files.isDirectory(mods)) {
+            try (var s = Files.list(mods)) {
+                s.filter(Files::isRegularFile)
+                        .filter(p -> { String n = p.getFileName().toString().toLowerCase();
+                            return n.endsWith(".jar") || n.endsWith(".jar.disabled"); })
+                        .forEach(out::add);
+            } catch (Exception ignored) {
+            }
+        }
+        return out;
+    }
+
+    private static boolean isEnabled(Path p) { return p.getFileName().toString().endsWith(".jar"); }
+
+    private boolean allModsDisabled(Instance inst) {
+        List<Path> f = modFiles(inst);
+        return !f.isEmpty() && f.stream().noneMatch(MainApp::isEnabled);
+    }
+
+    private boolean optimizationOnly(Instance inst) {
+        List<Path> f = modFiles(inst);
+        List<Path> enabled = f.stream().filter(MainApp::isEnabled).toList();
+        if (enabled.isEmpty()) return false;
+        boolean allEnabledOpt = enabled.stream().allMatch(p -> isOptMod(p.getFileName().toString()));
+        boolean someNonOptDisabled = f.stream().filter(p -> !isEnabled(p))
+                .anyMatch(p -> !isOptMod(baseName(p)));
+        return allEnabledOpt && someNonOptDisabled;
+    }
+
+    private static String baseName(Path p) {
+        String n = p.getFileName().toString();
+        return n.endsWith(".disabled") ? n.substring(0, n.length() - ".disabled".length()) : n;
+    }
+
+    /** Enable/disable every mod (rename .jar ↔ .jar.disabled). */
+    private void setAllModsDisabled(Instance inst, boolean disabled) {
+        for (Path p : modFiles(inst)) setEnabled(p, !disabled);
+    }
+
+    /** ON: keep only optimization mods enabled, disable the rest. OFF: enable everything. */
+    private void setOptimizationOnly(Instance inst, boolean on) {
+        for (Path p : modFiles(inst)) {
+            boolean wantEnabled = !on || isOptMod(baseName(p));
+            setEnabled(p, wantEnabled);
+        }
+    }
+
+    private void setEnabled(Path p, boolean enabled) {
+        try {
+            boolean cur = isEnabled(p);
+            if (cur == enabled) return;
+            Path target = enabled
+                    ? p.resolveSibling(baseName(p))
+                    : p.resolveSibling(p.getFileName().toString() + ".disabled");
+            Files.move(p, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception ignored) {
+        }
+    }
+
     private void populateFolderItems(Instance inst, String folder, VBox list) {
         list.getChildren().clear();
         if (inst == null) return;
@@ -2993,11 +3138,14 @@ public class MainApp extends Application {
         CheckBox confChk = new CheckBox("Confirm before deleting an instance");
         confChk.setSelected(config == null || config.confirmDelete());
         confChk.setOnAction(e -> { if (config != null) config.setConfirmDelete(confChk.isSelected()); });
+        CheckBox neoChk = new CheckBox("Suggest NeoForge when Forge would be slower (1.20.2+)");
+        neoChk.setSelected(config == null || config.autoNeoForge());
+        neoChk.setOnAction(e -> { if (config != null) config.setAutoNeoForge(neoChk.isSelected()); });
 
         VBox gdSection = new VBox(8, gdLbl,
                 settingRow("Default RAM", new HBox(10, defRam, defRamVal)),
                 settingRow("Default loader", defLoader),
-                minChk, confChk);
+                minChk, confChk, neoChk);
         gdSection.setStyle("-fx-padding: 12 0 0 0;");
 
         Label tip = new Label("Tip: press Ctrl+K anywhere to open the command palette.");

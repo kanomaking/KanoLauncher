@@ -305,6 +305,12 @@ The launcher is a working JavaFX app (`gradlew run`). Implemented and verified:
 
 **Playing Now:** a sidebar tab listing every running game (grouped by player, then version) with live uptime and a **Kill** button; instances show a green "● Running" indicator on their card + detail header. The sidebar entry shows a live count.
 
+**Mod-profile switches (per instance):** two sliding on/off switches on the instance detail — **"Disable all mods (base game)"** (renames every mod `.jar` ↔ `.jar.disabled`) and **"Optimization mods only"** (keeps only performance mods + their common deps enabled, disables everything else). States are derived from the folder, so the switches reflect reality.
+
+**Auto-route Forge → NeoForge:** creating a Forge instance on MC 1.20.2+ pops a "NeoForge is faster" suggestion (Forge lost its perf mods after 1.20.1) with Use NeoForge / Keep Forge. Toggleable in Settings → Global defaults (`ForgeVersions.neoForgePreferred`).
+
+**Version list:** the Create dialog now fetches the full Mojang manifest on demand if it opened before the background fetch finished — so the latest releases + snapshots always appear (898 versions, latest 26.2) instead of the short offline fallback.
+
 **Performance:** launch no longer re-hashes already-cached files every start — libraries/natives/assets/Forge libs are immutable, so they're verified once on download then trusted on existence (`Downloader.downloadIfAbsent`). Big startup speedup, especially for Forge's large classpath.
 
 **Performance Pack (researched + live-verified, per loader):** a multi-agent research pass (45 agents) enumerated every worthwhile perf mod by category, then **adversarially verified each against the live Modrinth API** (exists? declared loaders? maintained? conflicts?); 26 survived. Final conflict-free, loader-correct stacks (every slug confirmed to resolve a 1.21.1 build except where noted), button is gold/yellow:
