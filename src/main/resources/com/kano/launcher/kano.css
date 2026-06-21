@@ -163,6 +163,12 @@
 .card-title-sm { -fx-text-fill: #FFFFFF; -fx-font-size: 16px; -fx-font-weight: bold; }
 .card-meta { -fx-text-fill: #C0C0C0; -fx-font-size: 12px; }
 .card-sub { -fx-text-fill: #7d7d7d; -fx-font-size: 11px; }
+.card-downloads {
+    -fx-text-fill: #E5B53B;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, rgba(229,181,59,0.45), 6, 0.3, 0, 0);
+}
 
 .icon-tile {
     -fx-background-color: #07080b;

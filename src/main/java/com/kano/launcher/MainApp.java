@@ -46,15 +46,26 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.embed.swing.SwingFXUtils;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import javax.imageio.ImageIO;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -784,8 +795,8 @@ public class MainApp extends Application {
         Label desc = new Label(hit.description());
         desc.getStyleClass().add("card-sub");
         desc.setWrapText(true);
-        Label dl = new Label(formatDownloads(hit.downloads()) + " downloads");
-        dl.getStyleClass().add("card-meta");
+        Label dl = new Label("⬇ " + formatDownloads(hit.downloads()) + " downloads");
+        dl.getStyleClass().add("card-downloads");
         VBox info = new VBox(4, name, desc, dl);
         HBox.setHgrow(info, Priority.ALWAYS);
 
@@ -800,7 +811,14 @@ public class MainApp extends Application {
         return card;
     }
 
-    /** 48x48 rounded mod icon loaded from Modrinth; falls back to a glyph if missing/unsupported (e.g. webp). */
+    private static final java.util.Map<String, Image> ICON_CACHE = new ConcurrentHashMap<>();
+    private static final ExecutorService ICON_POOL = Executors.newFixedThreadPool(6, r -> {
+        Thread t = new Thread(r, "icon-load");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** 48x48 rounded mod icon from Modrinth. Decodes PNG/JPG/GIF/WebP; glyph fallback if it can't. */
     private Region modIcon(String url) {
         StackPane tile = new StackPane();
         tile.getStyleClass().add("mod-icon");
@@ -811,19 +829,37 @@ public class MainApp extends Application {
         placeholder.setStyle("-fx-font-size: 20px;");
         tile.getChildren().add(placeholder);
         if (url != null && !url.isBlank()) {
-            try {
-                ImageView iv = new ImageView(new Image(url, 48, 48, true, true, true)); // async load
-                iv.setFitWidth(48);
-                iv.setFitHeight(48);
-                Rectangle clip = new Rectangle(48, 48);
-                clip.setArcWidth(12);
-                clip.setArcHeight(12);
-                iv.setClip(clip);
-                tile.getChildren().add(iv); // covers the placeholder once loaded; if it errors, placeholder shows
-            } catch (Exception ignored) {
-            }
+            ImageView iv = new ImageView();
+            iv.setFitWidth(48);
+            iv.setFitHeight(48);
+            Rectangle clip = new Rectangle(48, 48);
+            clip.setArcWidth(12);
+            clip.setArcHeight(12);
+            iv.setClip(clip);
+            tile.getChildren().add(iv);
+            loadIcon(iv, url);
         }
         return tile;
+    }
+
+    /** Fetch + decode an image (any format ImageIO supports, incl. WebP) off-thread; cache by URL. */
+    private void loadIcon(ImageView iv, String url) {
+        Image cached = ICON_CACHE.get(url);
+        if (cached != null) { iv.setImage(cached); return; }
+        ICON_POOL.submit(() -> {
+            try {
+                HttpResponse<byte[]> r = HttpClient.newHttpClient().send(
+                        HttpRequest.newBuilder(URI.create(url)).GET().build(),
+                        HttpResponse.BodyHandlers.ofByteArray());
+                if (r.statusCode() != 200) return;
+                BufferedImage bi = ImageIO.read(new ByteArrayInputStream(r.body()));
+                if (bi == null) return;
+                Image img = SwingFXUtils.toFXImage(bi, null);
+                ICON_CACHE.put(url, img);
+                Platform.runLater(() -> iv.setImage(img));
+            } catch (Exception ignored) {
+            }
+        });
     }
 
     private void installMod(ModrinthClient.Hit hit, Instance inst, Button install) {

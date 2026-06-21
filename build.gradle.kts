@@ -15,11 +15,13 @@ java {
 
 javafx {
     version = "21.0.4"
-    modules = listOf("javafx.controls", "javafx.fxml")
+    modules = listOf("javafx.controls", "javafx.fxml", "javafx.swing")
 }
 
 dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
+    // Decode Modrinth's WebP mod icons (JavaFX can't read WebP natively).
+    implementation("org.sejda.imageio:webp-imageio:0.1.6")
 }
 
 application {
