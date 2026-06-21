@@ -18,7 +18,9 @@ import java.util.List;
  * Modrinth API v2 client: search (sortable, paginated), project details, and compatible versions —
  * filtered by the instance's exact Minecraft version (+ loader for mods). Sends the required UA.
  */
-public final class ModrinthClient {
+public final class ModrinthClient implements ContentSource {
+
+    @Override public String id() { return "modrinth"; }
 
     private static final String API = "https://api.modrinth.com/v2/";
     private static final String UA = "ChaosCraft/KanoLauncher/1.0 (kanomaking.em@gmail.com)";

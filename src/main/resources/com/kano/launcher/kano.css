@@ -171,6 +171,13 @@
 }
 .slider .axis-tick-mark, .slider .tick-mark { -fx-stroke: #3a3a3a; }
 
+.ram-value {
+    -fx-text-fill: #E53935;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, rgba(229,57,53,0.4), 6, 0.3, 0, 0);
+}
+
 /* bigger red RAM slider */
 .ram-slider { -fx-pref-height: 34; }
 .ram-slider .track {

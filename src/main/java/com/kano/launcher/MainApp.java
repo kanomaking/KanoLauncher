@@ -2,6 +2,9 @@ package com.kano.launcher;
 
 import com.kano.launcher.auth.MicrosoftAuth;
 import com.kano.launcher.core.AccountManager;
+import com.kano.launcher.core.Config;
+import com.kano.launcher.core.ContentSource;
+import com.kano.launcher.core.CurseForgeClient;
 import com.kano.launcher.core.Instance;
 import com.kano.launcher.core.FabricSupport;
 import com.kano.launcher.core.GameInstaller;
@@ -100,6 +103,8 @@ public class MainApp extends Application {
     private Label accountChip;
     private Stats stats;
     private Label statsLabel;
+    private Config config;
+    private ContentSource browseSource = new ModrinthClient();
 
     @Override
     public void start(Stage stage) {
@@ -157,6 +162,7 @@ public class MainApp extends Application {
             accountManager = new AccountManager(dir);
             instanceManager = new InstanceManager(dir);
             stats = new Stats(dir);
+            config = new Config(dir);
         } catch (Exception e) {
             initError = "Init failed: " + e.getMessage();
         }
@@ -512,8 +518,8 @@ public class MainApp extends Application {
         ramSlider.setSnapToTicks(true);
         ramSlider.setShowTickMarks(true);
         Label ramVal = new Label(inst.ramMb() + " MB");
-        ramVal.getStyleClass().add("card-sub");
-        ramVal.setMinWidth(72);
+        ramVal.getStyleClass().add("ram-value");
+        ramVal.setMinWidth(80);
         ramSlider.valueProperty().addListener((o, a, b) -> ramVal.setText(snapRam(b.doubleValue()) + " MB"));
         HBox ramBox = new HBox(10, ramSlider, ramVal);
         ramBox.setAlignment(Pos.CENTER_LEFT);
@@ -578,6 +584,7 @@ public class MainApp extends Application {
                 contentTab(inst, "Resource Packs", "resourcepacks", "Resource Packs"),
                 contentTab(inst, "Shaders", "shaderpacks", "Shaders"),
                 contentTab(inst, "Data Packs", "datapacks", "Data Packs"),
+                worldsTab(inst),
                 tab("Settings", settingsScroll));
         VBox.setVgrow(tabs, Priority.ALWAYS);
 
@@ -686,6 +693,10 @@ public class MainApp extends Application {
     }
 
     private void onPlay(Instance inst, ProgressBar bar, Button play) {
+        onPlay(inst, bar, play, null);
+    }
+
+    private void onPlay(Instance inst, ProgressBar bar, Button play, String quickWorld) {
         if (instanceManager == null) { alert(Alert.AlertType.ERROR, "Error", initError); return; }
         play.getStyleClass().add("loading"); // amber = preparing, before the bar even moves
         Thread t = new Thread(() -> {
@@ -720,7 +731,7 @@ public class MainApp extends Application {
                 String player = (accountManager != null && !accountManager.list().isEmpty())
                         ? accountManager.list().get(0).username() : "Player";
                 long sessionStart = System.currentTimeMillis();
-                Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric);
+                Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric, quickWorld);
                 Platform.runLater(() -> play.getStyleClass().remove("loading"));
 
                 // Mark last-played and refresh the view.
@@ -967,6 +978,106 @@ public class MainApp extends Application {
         }
     }
 
+    // ---- worlds ----
+
+    private Tab worldsTab(Instance inst) {
+        Label hint = new Label("Single-player worlds in this instance. Play jumps straight in.");
+        hint.getStyleClass().add("muted");
+        VBox listBox = new VBox(8);
+        populateWorlds(inst, listBox);
+        ScrollPane sp = new ScrollPane(listBox);
+        sp.setFitToWidth(true);
+        sp.getStyleClass().add("scroll-pane");
+        VBox.setVgrow(sp, Priority.ALWAYS);
+        VBox box = new VBox(10, hint, sp);
+        box.setPadding(new Insets(12));
+        return tab("Worlds", box);
+    }
+
+    private void populateWorlds(Instance inst, VBox list) {
+        list.getChildren().clear();
+        Path saves = instanceManager.instanceDir(inst).resolve("saves");
+        List<Path> worlds = new ArrayList<>();
+        if (Files.isDirectory(saves)) {
+            try (var s = Files.list(saves)) {
+                s.filter(Files::isDirectory).sorted().forEach(worlds::add);
+            } catch (Exception ignored) {
+            }
+        }
+        if (worlds.isEmpty()) {
+            Label none = new Label("No worlds yet — launch this instance and create one.");
+            none.getStyleClass().add("muted");
+            list.getChildren().add(none);
+            return;
+        }
+        for (Path w : worlds) {
+            Label name = new Label(w.getFileName().toString());
+            name.getStyleClass().add("card-title-sm");
+            Label sub = new Label(dirSize(w) + "   •   last played " + lastModified(w));
+            sub.getStyleClass().add("card-sub");
+            VBox info = new VBox(2, name, sub);
+            HBox.setHgrow(info, Priority.ALWAYS);
+
+            ProgressBar wbar = progress(0.0);
+            wbar.setMaxWidth(0);
+            wbar.setVisible(false);
+            wbar.setManaged(false);
+            Button playW = new Button("▶ Play");
+            playW.getStyleClass().add("btn-filled");
+            playW.setOnAction(e -> onPlay(inst, wbar, playW, w.getFileName().toString()));
+            Button openF = new Button("Open Folder");
+            openF.getStyleClass().add("btn-outline");
+            openF.setOnAction(e -> openFolder(w));
+            Button del = new Button("Delete");
+            del.getStyleClass().add("btn-outline");
+            del.setOnAction(e -> {
+                try { deleteDir(w); populateWorlds(inst, list); }
+                catch (Exception ex) { alert(Alert.AlertType.ERROR, "Delete failed", ex.getMessage()); }
+            });
+
+            HBox row = new HBox(10, info, wbar, playW, openF, del);
+            row.setAlignment(Pos.CENTER_LEFT);
+            StackPane card = new StackPane(row);
+            card.getStyleClass().add("card");
+            list.getChildren().add(card);
+        }
+    }
+
+    private void openFolder(Path dir) {
+        try { java.awt.Desktop.getDesktop().open(dir.toFile()); }
+        catch (Exception ex) { alert(Alert.AlertType.ERROR, "Can't open folder", String.valueOf(ex.getMessage())); }
+    }
+
+    private static String dirSize(Path dir) {
+        try (var s = Files.walk(dir)) {
+            long bytes = s.filter(Files::isRegularFile).mapToLong(p -> {
+                try { return Files.size(p); } catch (Exception e) { return 0L; }
+            }).sum();
+            if (bytes >= 1_073_741_824L) return String.format("%.1f GB", bytes / 1_073_741_824.0);
+            if (bytes >= 1_048_576) return String.format("%.0f MB", bytes / 1_048_576.0);
+            return String.format("%.0f KB", bytes / 1024.0);
+        } catch (Exception e) {
+            return "?";
+        }
+    }
+
+    private static String lastModified(Path dir) {
+        try {
+            return DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault())
+                    .format(Files.getLastModifiedTime(dir).toInstant());
+        } catch (Exception e) {
+            return "—";
+        }
+    }
+
+    private static void deleteDir(Path dir) throws Exception {
+        try (var s = Files.walk(dir)) {
+            s.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try { Files.deleteIfExists(p); } catch (Exception ignored) { }
+            });
+        }
+    }
+
     private static String fileSize(Path p) {
         try {
             long b = Files.size(p);
@@ -979,6 +1090,13 @@ public class MainApp extends Application {
     }
 
     // ---- Browse Mods (Modrinth) ----
+
+    private ContentSource sourceFor(String label) {
+        if ("CurseForge".equals(label)) {
+            return new CurseForgeClient(config != null ? config.curseforgeApiKey() : "");
+        }
+        return new ModrinthClient();
+    }
 
     private StringConverter<Instance> instanceConverter() {
         return new StringConverter<>() {
@@ -1026,6 +1144,10 @@ public class MainApp extends Application {
         sortBox.getItems().addAll("Most downloads", "Relevance", "Most followers", "Newest", "Recently updated");
         sortBox.getSelectionModel().selectFirst();
 
+        ChoiceBox<String> sourceBox = new ChoiceBox<>();
+        sourceBox.getItems().addAll("Modrinth", "CurseForge");
+        sourceBox.getSelectionModel().selectFirst();
+
         TextField q = new TextField();
         q.setPromptText("Search…");
         HBox.setHgrow(q, Priority.ALWAYS);
@@ -1049,20 +1171,21 @@ public class MainApp extends Application {
             String sort = sortKey(sortBox.getValue());
             String loaderFacet = ("mod".equals(type) || "modpack".equals(type)) ? "fabric" : null;
             String query = q.getText();
+            browseSource = sourceFor(sourceBox.getValue());
+            final ContentSource src = browseSource;
             if (reset) { offset[0] = 0; results.getChildren().clear(); }
             int startOffset = offset[0];
             loadMore.setDisable(true);
             loadMore.setText("Loading…");
             Thread t = new Thread(() -> {
                 try {
-                    ModrinthClient client = new ModrinthClient();
-                    var res = client.search(query, inst.version(), loaderFacet, type, sort, startOffset, 20);
-                    // Fallback: Modrinth's search index occasionally returns nothing — if you typed a
-                    // name, try a direct project lookup by slug so you can still find/install it.
+                    var res = src.search(query, inst.version(), loaderFacet, type, sort, startOffset, 20);
+                    // Fallback (Modrinth only): its search index occasionally returns nothing — if you
+                    // typed a name, try a direct project lookup by slug so you can still find/install it.
                     ModrinthClient.Hit fb = null;
-                    if (reset && res.hits().isEmpty() && query != null && !query.isBlank()) {
+                    if ("modrinth".equals(src.id()) && reset && res.hits().isEmpty() && query != null && !query.isBlank()) {
                         try {
-                            var pd = client.project(query.trim().toLowerCase().replaceAll("\\s+", "-"));
+                            var pd = src.project(query.trim().toLowerCase().replaceAll("\\s+", "-"));
                             fb = new ModrinthClient.Hit(pd.id(), pd.slug(), pd.title(), pd.summary(),
                                     pd.downloads(), pd.iconUrl(), type);
                         } catch (Exception ignore) {
@@ -1113,18 +1236,21 @@ public class MainApp extends Application {
         instPick.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> page2.accept(true));
         typeBox.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> page2.accept(true));
         sortBox.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> page2.accept(true));
+        sourceBox.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> page2.accept(true));
 
         Button perfBtn = new Button("⚡ Performance Pack");
         perfBtn.getStyleClass().add("btn-outline");
         perfBtn.setOnAction(e -> installPerfPack(instPick.getValue(), perfBtn));
 
+        Label srcLbl = new Label("Source:");
+        srcLbl.getStyleClass().add("card-sub");
         Label typeLbl = new Label("Type:");
         typeLbl.getStyleClass().add("card-sub");
         Label sortLbl = new Label("Sort:");
         sortLbl.getStyleClass().add("card-sub");
         HBox bar1 = new HBox(10, instPick, q);
         bar1.setAlignment(Pos.CENTER_LEFT);
-        HBox bar2 = new HBox(10, typeLbl, typeBox, sortLbl, sortBox, perfBtn);
+        HBox bar2 = new HBox(10, srcLbl, sourceBox, typeLbl, typeBox, sortLbl, sortBox, perfBtn);
         bar2.setAlignment(Pos.CENTER_LEFT);
         page.getChildren().addAll(title, bar1, bar2, scroll);
         content.getChildren().setAll(page);
@@ -1251,7 +1377,7 @@ public class MainApp extends Application {
         Thread t = new Thread(() -> {
             try {
                 Path dir = instanceManager.instanceDir(inst).resolve(folder);
-                int n = ModInstaller.install(new ModrinthClient(), hit.projectId(), inst.version(),
+                int n = ModInstaller.install(browseSource, hit.projectId(), inst.version(),
                         depLoader, dir, msg -> {});
                 Platform.runLater(() -> {
                     install.setText("Installed ✓");
@@ -1322,7 +1448,7 @@ public class MainApp extends Application {
 
         Thread t = new Thread(() -> {
             try {
-                var pd = new ModrinthClient().project(hit.projectId());
+                var pd = browseSource.project(hit.projectId());
                 Platform.runLater(() -> renderModDetail(pd, hit, inst, type));
             } catch (Exception ex) {
                 Platform.runLater(() -> loading.setText("Failed to load: " + ex.getMessage()));
@@ -1380,10 +1506,15 @@ public class MainApp extends Application {
         Button install = new Button("Install to " + inst.name());
         install.getStyleClass().add("btn-filled");
         install.setOnAction(e -> installMod(hit, inst, type, install));
-        Button open = new Button("Open on Modrinth");
+        boolean cf = "curseforge".equals(browseSource.id());
+        Button open = new Button(cf ? "Open on CurseForge" : "Open on Modrinth");
         open.getStyleClass().add("btn-outline");
         String slug = pd.slug().isBlank() ? hit.slug() : pd.slug();
-        open.setOnAction(e -> getHostServices().showDocument("https://modrinth.com/" + type + "/" + slug));
+        String openUrl = cf
+                ? "https://www.curseforge.com/minecraft/search?search="
+                        + java.net.URLEncoder.encode(slug, java.nio.charset.StandardCharsets.UTF_8)
+                : "https://modrinth.com/" + type + "/" + slug;
+        open.setOnAction(e -> getHostServices().showDocument(openUrl));
         HBox btns = new HBox(10, install, open);
 
         TextArea body = new TextArea(stripMarkdown(pd.body()));
@@ -1418,7 +1549,26 @@ public class MainApp extends Application {
         cid.getStyleClass().add("muted");
         Label dir = new Label("Data folder: " + resolveDataDir());
         dir.getStyleClass().add("muted");
-        page.getChildren().addAll(t, cid, dir);
+
+        Label cfLbl = new Label("CurseForge API key");
+        cfLbl.getStyleClass().add("card-title-sm");
+        Label cfHelp = new Label("Lets you browse CurseForge as a second source. Get a free key at "
+                + "console.curseforge.com → API Keys. Stored locally only.");
+        cfHelp.getStyleClass().add("muted");
+        cfHelp.setWrapText(true);
+        TextField cfKey = new TextField(config != null ? config.curseforgeApiKey() : "");
+        cfKey.setPromptText("paste your CurseForge API key");
+        cfKey.setPrefWidth(420);
+        Button saveCf = new Button("Save Key");
+        saveCf.getStyleClass().add("btn-filled");
+        saveCf.setOnAction(e -> {
+            if (config != null) config.setCurseforgeApiKey(cfKey.getText());
+            alert(Alert.AlertType.INFORMATION, "Saved", "CurseForge API key saved.");
+        });
+        VBox cfBox = new VBox(8, cfLbl, cfHelp, cfKey, saveCf);
+        cfBox.setStyle("-fx-padding: 12 0 0 0;");
+
+        page.getChildren().addAll(t, cid, dir, cfBox);
         content.getChildren().setAll(page);
     }
 

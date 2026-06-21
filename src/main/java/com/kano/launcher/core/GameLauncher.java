@@ -29,6 +29,12 @@ public final class GameLauncher {
 
     public static Process launch(Instance inst, VersionDetail vd, Path javaExe, Path dataDir,
                                  String playerName, FabricSupport.Profile fabric) throws Exception {
+        return launch(inst, vd, javaExe, dataDir, playerName, fabric, null);
+    }
+
+    /** @param quickWorld if non-null, boots straight into that single-player world folder. */
+    public static Process launch(Instance inst, VersionDetail vd, Path javaExe, Path dataDir,
+                                 String playerName, FabricSupport.Profile fabric, String quickWorld) throws Exception {
         Path libsDir = GameInstaller.librariesDir(dataDir);
         Path assets = GameInstaller.assetsDir(dataDir);
         Path clientJar = GameInstaller.clientJar(dataDir, vd.id());
@@ -99,6 +105,10 @@ public final class GameLauncher {
             gameArgs.add("--height"); gameArgs.add(String.valueOf(inst.height()));
         }
         if (inst.fullscreen()) gameArgs.add("--fullscreen");
+        if (quickWorld != null && !quickWorld.isBlank()) {
+            gameArgs.add("--quickPlaySingleplayer");
+            gameArgs.add(quickWorld);
+        }
 
         String mainClass = fabric != null ? fabric.mainClass() : vd.mainClass();
 

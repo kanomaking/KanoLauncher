@@ -17,13 +17,13 @@ public final class ModInstaller {
     private ModInstaller() {}
 
     /** Install a project's latest compatible version + all required deps. Returns count installed. */
-    public static int install(ModrinthClient client, String projectId, String gameVersion,
+    public static int install(ContentSource client, String projectId, String gameVersion,
                               String loader, Path modsDir, Log log) throws Exception {
         Files.createDirectories(modsDir);
         return installRec(client, projectId, gameVersion, loader, modsDir, new HashSet<>(), log);
     }
 
-    private static int installRec(ModrinthClient client, String projectId, String gameVersion,
+    private static int installRec(ContentSource client, String projectId, String gameVersion,
                                   String loader, Path modsDir, Set<String> visited, Log log) throws Exception {
         if (!visited.add(projectId)) return 0;
         List<ModrinthClient.ModVersion> versions = client.versions(projectId, gameVersion, loader);
@@ -35,6 +35,10 @@ public final class ModInstaller {
         ModrinthClient.ModFile file = v.files().stream().filter(ModrinthClient.ModFile::primary)
                 .findFirst().orElse(v.files().isEmpty() ? null : v.files().get(0));
         if (file == null) return 0;
+        if (file.url() == null || file.url().isBlank()) {
+            throw new RuntimeException("\"" + file.filename()
+                    + "\" blocks third-party downloads — install it from the source's website.");
+        }
 
         Downloader.download(file.url(), null, modsDir.resolve(file.filename()));
         log.line("Installed " + file.filename());
