@@ -217,11 +217,10 @@ public class MainApp extends Application {
         // is guaranteed visible when it opens, then behaves like a normal window. A 6s timer is a
         // fallback in case there's no interaction.
         bringToFront();
+        // Stay on top until you actually interact with the launcher — so it remains visible even over a
+        // running game, then drops to normal stacking the moment you click or type on it.
         scene.addEventHandler(MouseEvent.MOUSE_PRESSED, ev -> stage.setAlwaysOnTop(false));
         scene.addEventHandler(KeyEvent.KEY_PRESSED, ev -> stage.setAlwaysOnTop(false));
-        PauseTransition releaseTop = new PauseTransition(Duration.millis(6000));
-        releaseTop.setOnFinished(ev -> stage.setAlwaysOnTop(false));
-        releaseTop.play();
 
         scene.getAccelerators().put(
                 new KeyCodeCombination(KeyCode.R, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
