@@ -217,10 +217,18 @@ public class MainApp extends Application {
         // is guaranteed visible when it opens, then behaves like a normal window. A 6s timer is a
         // fallback in case there's no interaction.
         bringToFront();
-        // Stay on top until you actually interact with the launcher — so it remains visible even over a
-        // running game, then drops to normal stacking the moment you click or type on it.
-        scene.addEventHandler(MouseEvent.MOUSE_PRESSED, ev -> stage.setAlwaysOnTop(false));
-        scene.addEventHandler(KeyEvent.KEY_PRESSED, ev -> stage.setAlwaysOnTop(false));
+        // Drop topmost on ANY interaction with the launcher (filter, not handler — filter runs even when
+        // inner controls consume the event; handler doesn't, which left the window glued on top forever).
+        Runnable releaseTopmost = () -> { if (stage.isAlwaysOnTop()) stage.setAlwaysOnTop(false); };
+        scene.addEventFilter(MouseEvent.MOUSE_PRESSED, ev -> releaseTopmost.run());
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, ev -> releaseTopmost.run());
+        // Also drop topmost the moment the launcher LOSES focus (user clicked another app) — so it
+        // never blocks other windows; and the moment it GAINS focus again it doesn't re-stick.
+        stage.focusedProperty().addListener((obs, was, now) -> { if (!now) releaseTopmost.run(); });
+        // Belt-and-braces: release after 2s no matter what, so a quiet user never gets stuck-on-top.
+        PauseTransition fallback = new PauseTransition(Duration.millis(2000));
+        fallback.setOnFinished(ev -> releaseTopmost.run());
+        fallback.play();
 
         scene.getAccelerators().put(
                 new KeyCodeCombination(KeyCode.R, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
@@ -256,6 +264,31 @@ public class MainApp extends Application {
             });
             restore.play();
         });
+    }
+
+    /**
+     * Launch an instance under a specific account, in parallel with whatever else is running
+     * (Prism/MultiMC-style two-accounts-at-once). Warns if the same instance is already running,
+     * since two clients on the same world fight for session.lock — best for multiplayer where both
+     * accounts join a server. Each launch gets its own process and registers in Playing Now.
+     */
+    private void launchAs(Instance inst, AccountManager.StoredAccount acc) {
+        if (isRunning(inst)) {
+            Alert c = new Alert(Alert.AlertType.CONFIRMATION,
+                    "“" + inst.name() + "” is already running.\n\n"
+                    + "Launching a second copy as " + acc.username() + " is fine for joining the same "
+                    + "server together, but DO NOT load the same single-player world in both — they'll "
+                    + "fight for the save file. For separate worlds, Clone the instance first.\n\n"
+                    + "Launch a second copy anyway?",
+                    ButtonType.OK, ButtonType.CANCEL);
+            c.setHeaderText(null);
+            styleDialog(c);
+            if (c.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+        }
+        ProgressBar bar = progress(0.0);
+        bar.setMaxWidth(0); bar.setVisible(false); bar.setManaged(false);
+        Button stub = new Button("▶");
+        onPlay(inst, bar, stub, null, null, acc);
     }
 
     /** Close the launcher and guarantee the JVM exits (a packaged app can otherwise hang on a stray thread). */
@@ -1227,7 +1260,25 @@ public class MainApp extends Application {
         Button play = new Button("▶  Play");
         play.getStyleClass().add("btn-filled");
         play.setOnAction(e -> onPlay(inst, bar, play));
-        VBox playBox = new VBox(6, play, bar);
+        HBox playRow = new HBox(6, play);
+        playRow.setAlignment(Pos.CENTER_RIGHT);
+        var accs = accountManager == null ? List.<AccountManager.StoredAccount>of() : accountManager.list();
+        if (accs.size() >= 2) {
+            javafx.scene.control.MenuButton picker = new javafx.scene.control.MenuButton("▾");
+            picker.getStyleClass().add("btn-filled");
+            picker.setStyle("-fx-padding: 9 12 9 12;");
+            javafx.scene.control.Tooltip.install(picker, new javafx.scene.control.Tooltip(
+                    "Launch with a different account (run two accounts at once)"));
+            var active = activeAccount();
+            for (AccountManager.StoredAccount acc : accs) {
+                String mark = active != null && acc.uuid().equals(active.uuid()) ? "● " : "○ ";
+                javafx.scene.control.MenuItem mi = new javafx.scene.control.MenuItem(mark + "Play as " + acc.username());
+                mi.setOnAction(ev -> launchAs(inst, acc));
+                picker.getItems().add(mi);
+            }
+            playRow.getChildren().add(picker);
+        }
+        VBox playBox = new VBox(6, playRow, bar);
         playBox.setAlignment(Pos.CENTER_RIGHT);
 
         HBox header = new HBox(16, back, icon, titleBox, grow, playBox);
@@ -1598,14 +1649,20 @@ public class MainApp extends Application {
     }
 
     private void onPlay(Instance inst, ProgressBar bar, Button play) {
-        onPlay(inst, bar, play, null, null);
+        onPlay(inst, bar, play, null, null, null);
     }
 
     private void onPlay(Instance inst, ProgressBar bar, Button play, String quickWorld) {
-        onPlay(inst, bar, play, quickWorld, null);
+        onPlay(inst, bar, play, quickWorld, null, null);
     }
 
     private void onPlay(Instance inst, ProgressBar bar, Button play, String quickWorld, String quickServer) {
+        onPlay(inst, bar, play, quickWorld, quickServer, null);
+    }
+
+    /** @param playAs override account (Prism/MultiMC-style multi-instance play); null = active account. */
+    private void onPlay(Instance inst, ProgressBar bar, Button play, String quickWorld, String quickServer,
+                        AccountManager.StoredAccount playAs) {
         if (instanceManager == null) { alert(Alert.AlertType.ERROR, "Error", initError); return; }
         play.getStyleClass().add("loading"); // amber = preparing, before the bar even moves
         Thread t = new Thread(() -> {
@@ -1645,7 +1702,7 @@ public class MainApp extends Application {
                 }
 
                 // 3. Launch (offline mode — works before app approval).
-                var activeAcc = activeAccount();
+                var activeAcc = playAs != null ? playAs : activeAccount();
                 String player = activeAcc != null ? activeAcc.username() : "Player";
                 long sessionStart = System.currentTimeMillis();
                 Process proc = GameLauncher.launch(inst, vd, javaExe, dataDir, player, fabric, forge, quickWorld, quickServer);
