@@ -219,15 +219,16 @@ public class MainApp extends Application {
         bringToFront();
         // Drop topmost on ANY interaction with the launcher (filter, not handler — filter runs even when
         // inner controls consume the event; handler doesn't, which left the window glued on top forever).
-        Runnable releaseTopmost = () -> { if (stage.isAlwaysOnTop()) stage.setAlwaysOnTop(false); };
-        scene.addEventFilter(MouseEvent.MOUSE_PRESSED, ev -> releaseTopmost.run());
-        scene.addEventFilter(KeyEvent.KEY_PRESSED, ev -> releaseTopmost.run());
-        // Also drop topmost the moment the launcher LOSES focus (user clicked another app) — so it
-        // never blocks other windows; and the moment it GAINS focus again it doesn't re-stick.
-        stage.focusedProperty().addListener((obs, was, now) -> { if (!now) releaseTopmost.run(); });
+        java.util.function.Consumer<String> releaseTopmost = (why) -> {
+            if (stage.isAlwaysOnTop()) { stage.setAlwaysOnTop(false); logWindowGeometry("topmost-released:" + why); }
+        };
+        scene.addEventFilter(MouseEvent.MOUSE_PRESSED, ev -> releaseTopmost.accept("click"));
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, ev -> releaseTopmost.accept("key"));
+        // Also drop topmost the moment the launcher LOSES focus (user clicked another app).
+        stage.focusedProperty().addListener((obs, was, now) -> { if (!now) releaseTopmost.accept("focus-lost"); });
         // Belt-and-braces: release after 2s no matter what, so a quiet user never gets stuck-on-top.
         PauseTransition fallback = new PauseTransition(Duration.millis(2000));
-        fallback.setOnFinished(ev -> releaseTopmost.run());
+        fallback.setOnFinished(ev -> releaseTopmost.accept("2s-timer"));
         fallback.play();
 
         scene.getAccelerators().put(
