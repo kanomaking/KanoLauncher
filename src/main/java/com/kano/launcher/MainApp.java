@@ -106,7 +106,7 @@ import java.util.Map;
  */
 public class MainApp extends Application {
 
-    private static final String VERSION = "v1.2.2";
+    private static final String VERSION = "v1.2.3";
     private static final String[] VERSIONS = {"1.21.4", "1.21.1", "1.20.6", "1.20.4", "1.20.1"};
 
     private final StackPane content = new StackPane();
@@ -2538,11 +2538,10 @@ public class MainApp extends Application {
         sortBox.getItems().addAll("Most downloads", "Relevance", "Most followers", "Newest", "Recently updated");
         sortBox.getSelectionModel().selectFirst();
 
-        // Modrinth only — its API is open (no key). CurseForge browsing needs a gated developer key
-        // that gets revoked when shared, so CurseForge is supported via key-free "Import modpack" +
-        // drag-drop instead (see Settings → CurseForge content).
+        // Modrinth (open API, no key) is the default. CurseForge browsing needs the user's own API key
+        // (set in Settings → CurseForge); without one it returns 403. Import/drag-drop stay key-free.
         ChoiceBox<String> sourceBox = new ChoiceBox<>();
-        sourceBox.getItems().add("Modrinth");
+        sourceBox.getItems().addAll("Modrinth", "CurseForge");
         sourceBox.getSelectionModel().selectFirst();
 
         TextField q = new TextField();
@@ -2570,6 +2569,22 @@ public class MainApp extends Application {
             String query = q.getText();
             browseSource = sourceFor(sourceBox.getValue());
             final ContentSource src = browseSource;
+            // CurseForge browsing needs the user's own API key — without one it would just 403. Point
+            // them to the Settings setup instead of showing a raw error. (Import/drag-drop are key-free.)
+            boolean cfNoKey = "curseforge".equals(src.id())
+                    && (config == null || config.userCurseforgeApiKey() == null || config.userCurseforgeApiKey().isBlank());
+            if (cfNoKey) {
+                results.getChildren().clear();
+                Label need = new Label("CurseForge browsing needs your own API key — open Settings → "
+                        + "CurseForge for the 2-minute setup. (You don't need a key to import a CurseForge "
+                        + "modpack or to drag mod .jar files in — only to browse here.)");
+                need.getStyleClass().add("muted");
+                need.setWrapText(true);
+                results.getChildren().add(need);
+                loadMore.setVisible(false);
+                loadMore.setManaged(false);
+                return;
+            }
             if (reset) { offset[0] = 0; results.getChildren().clear(); }
             int startOffset = offset[0];
             loadMore.setDisable(true);
@@ -3395,7 +3410,38 @@ public class MainApp extends Application {
                 + "\"Import modpack\" — it creates the instance and fetches the mods automatically.");
         cfHelp.getStyleClass().add("muted");
         cfHelp.setWrapText(true);
-        VBox cfBox = new VBox(8, cfLbl, cfHelp);
+
+        // Optional: a personal API key enables BROWSING CurseForge inside the launcher (second source on
+        // the Browse page). Import/drag-drop don't need it. Each person uses their own key — CurseForge
+        // keys can't be shared (they get revoked), so this is never bundled.
+        Label cfOpt = new Label("Optional — browse CurseForge in the launcher with your own API key:");
+        cfOpt.getStyleClass().add("muted");
+        cfOpt.setWrapText(true);
+        TextField cfKey = new TextField(config != null ? config.userCurseforgeApiKey() : "");
+        cfKey.setPromptText("paste your CurseForge API key (starts with $2a$…)");
+        cfKey.setPrefWidth(420);
+        Button saveCf = new Button("Save Key");
+        saveCf.getStyleClass().add("btn-filled");
+        saveCf.setOnAction(e -> {
+            if (config != null) config.setCurseforgeApiKey(cfKey.getText().trim());
+            alert(Alert.AlertType.INFORMATION, "Saved",
+                    "CurseForge API key saved. On the Browse page, pick \"CurseForge\" as the source to use it.");
+        });
+        Label cfSteps = new Label(
+                "How to get your key (free, ~2 minutes):\n"
+                + "1.  Go to console.curseforge.com and sign in (use your Overwolf/CurseForge, Google, or "
+                + "Discord account — it's free).\n"
+                + "2.  In the left-hand menu, click \"API Keys\".\n"
+                + "3.  Copy the key shown — it's a long line that starts with \"$2a$\".\n"
+                + "4.  Paste it in the box above and click \"Save Key\".\n"
+                + "5.  Open the Browse page and choose \"CurseForge\" in the Source dropdown.\n\n"
+                + "Keep your key private — don't share or post it; it's tied to your account. If browsing "
+                + "ever says \"forbidden\" (403), your key was deactivated — regenerate it on that same "
+                + "API Keys page and paste the new one here.");
+        cfSteps.getStyleClass().add("muted");
+        cfSteps.setWrapText(true);
+
+        VBox cfBox = new VBox(8, cfLbl, cfHelp, cfOpt, cfKey, saveCf, cfSteps);
         cfBox.setStyle("-fx-padding: 12 0 0 0;");
 
         Label bgLbl = new Label("Launcher background");
