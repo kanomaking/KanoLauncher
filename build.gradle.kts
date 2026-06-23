@@ -38,7 +38,7 @@ tasks.named<JavaExec>("run") {
 // `gradlew packageApp` → build/dist/KanoLauncher/ (KanoLauncher.exe + bundled Java runtime, ~90 MB).
 // `gradlew zipApp`     → build/dist/KanoLauncher-<ver>-win.zip — the single file to send friends.
 // jpackage app-image needs no extra tooling (no WiX); friends just unzip and run the .exe, no Java install.
-val appVersion = "1.1.0"
+val appVersion = "1.2.2"
 val runtimeModules = listOf(
     "java.base", "java.desktop", "java.logging", "java.management", "java.naming",
     "java.net.http", "java.prefs", "java.scripting", "java.sql", "java.xml",

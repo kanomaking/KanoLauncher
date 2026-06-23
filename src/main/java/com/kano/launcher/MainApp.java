@@ -3,6 +3,7 @@ package com.kano.launcher;
 import com.kano.launcher.auth.MicrosoftAuth;
 import com.kano.launcher.core.AccountManager;
 import com.kano.launcher.core.Config;
+import com.kano.launcher.core.CfModpackInstaller;
 import com.kano.launcher.core.ContentSource;
 import com.kano.launcher.core.CurseForgeClient;
 import com.kano.launcher.core.Downloader;
@@ -105,7 +106,7 @@ import java.util.Map;
  */
 public class MainApp extends Application {
 
-    private static final String VERSION = "v1.1.0";
+    private static final String VERSION = "v1.2.2";
     private static final String[] VERSIONS = {"1.21.4", "1.21.1", "1.20.6", "1.20.4", "1.20.1"};
 
     private final StackPane content = new StackPane();
@@ -124,6 +125,7 @@ public class MainApp extends Application {
     private double restoreX, restoreY, restoreW, restoreH;
     private Label accountChip;
     private HBox avatarBar;
+    private HBox titleBar;
     private Label titleText;
     private javafx.scene.text.TextFlow brandFlow;
     private Stats stats;
@@ -154,7 +156,10 @@ public class MainApp extends Application {
         initData();
 
         BorderPane inner = new BorderPane();
-        inner.setTop(new VBox(buildTitleBar(), buildUpdateBanner()));
+        // Standard OS window now draws the title bar + min/max/close + handles drag/resize, so there's
+        // no custom title bar; just the update banner sits at the top. The brand + account/avatar UI
+        // live in the sidebar (see buildSidebar).
+        inner.setTop(buildUpdateBanner());
         inner.setLeft(buildSidebar());
         inner.setCenter(new StackPane(content, buildPalette()));
         inner.setBottom(buildStatsBar());
@@ -165,7 +170,7 @@ public class MainApp extends Application {
         if (bg != null) appPanel.getChildren().add(bg);
         appPanel.getChildren().add(inner);
 
-        appShell = new StackPane(appPanel, buildResizeGrip());
+        appShell = new StackPane(appPanel);
         appShell.getStyleClass().add("app-shell");
         StackPane shell = appShell;
 
@@ -188,48 +193,42 @@ public class MainApp extends Application {
         double winH = Math.min(720, vb.getHeight() - 80);
 
         Scene scene = new Scene(shell, winW, winH);
-        scene.setFill(Color.TRANSPARENT);
+        scene.setFill(Color.web("#050608"));
         var css = getClass().getResource("kano.css");
         if (css != null) scene.getStylesheets().add(css.toExternalForm());
 
         scene.getAccelerators().put(
                 new KeyCodeCombination(KeyCode.K, KeyCombination.CONTROL_DOWN), this::openPalette);
 
-        stage.initStyle(StageStyle.TRANSPARENT);
+        // Standard OS-decorated window. Windows draws the frame (title bar, min/max/close, drag, resize),
+        // which renders reliably at any size — unlike UNDECORATED/TRANSPARENT custom-frame stages, which
+        // each had their own Windows bug (UNDECORATED clipped the windowed content; TRANSPARENT broke
+        // focus/z-order). The custom themed title bar is dropped in favour of the OS one.
+        stage.initStyle(StageStyle.DECORATED);
         stage.setTitle(launcherName());
         // Window / taskbar icon = the king (prefers a square avatar if present, else the render).
         var iconUrl = getClass().getResource("king-avatar.png");
         if (iconUrl == null) iconUrl = getClass().getResource("king-bg.png");
         if (iconUrl != null) stage.getIcons().add(new Image(iconUrl.toExternalForm()));
         stage.setScene(scene);
-        stage.setMinWidth(Math.min(960, vb.getWidth() - 40));
-        stage.setMinHeight(Math.min(600, vb.getHeight() - 40));
+        stage.setMinWidth(960);
+        stage.setMinHeight(600);
+        // Content fills the window edge-to-edge (flat panel — no inset rounded card / glow that would
+        // look odd inside the OS frame).
+        shellFlat(true);
+        // Centered windowed frame; the OS manages placement/resize from here.
         stage.setWidth(winW);
         stage.setHeight(winH);
-        // Center within the work area (size is clamped to fit, so this stays on-screen on any display).
         stage.setX(vb.getMinX() + (vb.getWidth() - winW) / 2);
         stage.setY(vb.getMinY() + (vb.getHeight() - winH) / 2);
         stage.show();
+        // Open maximized if configured — native OS maximize (keeps the taskbar; no manual geometry).
+        if (config != null && config.startMaximized()) stage.setMaximized(true);
+        logWindowGeometry("build:" + VERSION);
         logWindowGeometry("after-show");
-        Platform.runLater(this::clampOnScreen);
-        // Force the window ABOVE other apps on launch (Windows hides it behind the foreground app /
-        // a running game otherwise). It stays topmost until you actually click or type on it — so it
-        // is guaranteed visible when it opens, then behaves like a normal window. A 6s timer is a
-        // fallback in case there's no interaction.
+        // Raise to front on launch (double-click already grabs foreground; helps the terminal-launch case).
         bringToFront();
-        // Drop topmost on ANY interaction with the launcher (filter, not handler — filter runs even when
-        // inner controls consume the event; handler doesn't, which left the window glued on top forever).
-        java.util.function.Consumer<String> releaseTopmost = (why) -> {
-            if (stage.isAlwaysOnTop()) { stage.setAlwaysOnTop(false); logWindowGeometry("topmost-released:" + why); }
-        };
-        scene.addEventFilter(MouseEvent.MOUSE_PRESSED, ev -> releaseTopmost.accept("click"));
-        scene.addEventFilter(KeyEvent.KEY_PRESSED, ev -> releaseTopmost.accept("key"));
-        // Also drop topmost the moment the launcher LOSES focus (user clicked another app).
-        stage.focusedProperty().addListener((obs, was, now) -> { if (!now) releaseTopmost.accept("focus-lost"); });
-        // Belt-and-braces: release after 2s no matter what, so a quiet user never gets stuck-on-top.
-        PauseTransition fallback = new PauseTransition(Duration.millis(2000));
-        fallback.setOnFinished(ev -> releaseTopmost.accept("2s-timer"));
-        fallback.play();
+        stage.focusedProperty().addListener((obs, was, now) -> logWindowGeometry("focus-changed:" + now));
 
         scene.getAccelerators().put(
                 new KeyCodeCombination(KeyCode.R, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
@@ -244,27 +243,18 @@ public class MainApp extends Application {
     }
 
     /**
-     * Raise the window above all other apps. Sets it topmost (renders over normal + borderless
-     * windows immediately) and does a quick minimize→restore, which Windows treats as a user-driven
-     * foreground change — defeating focus-stealing prevention so it pops to the front reliably.
+     * Raise the window to the front. Just toFront + requestFocus — NO setAlwaysOnTop and NO
+     * minimize→restore "trick". History: setAlwaysOnTop left WS_EX_TOPMOST stuck (window floated
+     * over everything); the setIconified(true)→(false) cycle made Glass repaint an undecorated
+     * WINDOWED stage shifted up by the title-bar height (title bar + top/bottom glow clipped).
+     * Both were net-negative. A normal double-click already grabs foreground from the shell; the
+     * maximized-by-default setting guarantees visibility for the launched-from-terminal case.
      * (Exclusive-fullscreen games can't be drawn over by anything — Alt+Tab in that one case.)
      */
     private void bringToFront() {
         if (stage == null) return;
-        stage.setAlwaysOnTop(true);
-        stage.setIconified(false);
         stage.toFront();
         stage.requestFocus();
-        Platform.runLater(() -> {
-            stage.setIconified(true);
-            PauseTransition restore = new PauseTransition(Duration.millis(60));
-            restore.setOnFinished(ev -> {
-                stage.setIconified(false);
-                stage.toFront();
-                stage.requestFocus();
-            });
-            restore.play();
-        });
     }
 
     /**
@@ -301,6 +291,7 @@ public class MainApp extends Application {
     /** Pull the window fully back into the work area of the screen it's actually on (top edge especially). */
     private void clampOnScreen() {
         if (stage == null) return;
+        if (maximized) { logWindowGeometry("clamp-skipped:maximized"); return; } // don't shrink a maximized window
         var screens = Screen.getScreensForRectangle(stage.getX(), stage.getY(),
                 Math.max(1, stage.getWidth()), Math.max(1, stage.getHeight()));
         Screen scr = screens.isEmpty() ? Screen.getPrimary() : screens.get(0);
@@ -315,6 +306,7 @@ public class MainApp extends Application {
         stage.setY(y);
         logWindowGeometry("clamped");
     }
+
 
     /** Append screen + window geometry to a debug log so off-screen placement can be diagnosed. */
     private void logWindowGeometry(String when) {
@@ -334,10 +326,10 @@ public class MainApp extends Application {
         }
     }
 
-    /** Re-fit + re-center the window (Ctrl+Shift+R) — a manual rescue if it ever ends up off-screen. */
+    /** Re-center the window (Ctrl+Shift+R) — a manual rescue. Un-maximizes first, then centers. */
     private void recenterWindow() {
         if (stage == null) return;
-        if (maximized) { toggleMaximize(); return; }
+        if (stage.isMaximized()) stage.setMaximized(false);
         Rectangle2D vb = Screen.getPrimary().getVisualBounds();
         double w = Math.min(Math.max(960, stage.getWidth()), vb.getWidth() - 40);
         double h = Math.min(Math.max(600, stage.getHeight()), vb.getHeight() - 40);
@@ -347,30 +339,10 @@ public class MainApp extends Application {
         stage.setY(vb.getMinY() + 28);
     }
 
+    /** Toggle the native OS maximize state. */
     private void toggleMaximize() {
         if (stage == null) return;
-        if (!maximized) {
-            restoreX = stage.getX();
-            restoreY = stage.getY();
-            restoreW = stage.getWidth();
-            restoreH = stage.getHeight();
-            Screen scr = Screen.getScreensForRectangle(stage.getX(), stage.getY(), 1, 1)
-                    .stream().findFirst().orElse(Screen.getPrimary());
-            Rectangle2D b = scr.getVisualBounds(); // work area — excludes the taskbar
-            stage.setX(b.getMinX());
-            stage.setY(b.getMinY());
-            stage.setWidth(b.getWidth());
-            stage.setHeight(b.getHeight());
-            maximized = true;
-            shellFlat(true);
-        } else {
-            stage.setX(restoreX);
-            stage.setY(restoreY);
-            stage.setWidth(restoreW);
-            stage.setHeight(restoreH);
-            maximized = false;
-            shellFlat(false);
-        }
+        stage.setMaximized(!stage.isMaximized());
     }
 
     private void shellFlat(boolean flat) {
@@ -550,6 +522,7 @@ public class MainApp extends Application {
         HBox bar = new HBox(10, k, title, grow, avatarBar, accountChip, min, max, close);
         bar.getStyleClass().add("title-bar");
         bar.setAlignment(Pos.CENTER_LEFT);
+        this.titleBar = bar;
 
         bar.setOnMousePressed(e -> { dragX = e.getScreenX() - stage.getX(); dragY = e.getScreenY() - stage.getY(); });
         bar.setOnMouseDragged(e -> {
@@ -648,7 +621,20 @@ public class MainApp extends Application {
         brand.setAlignment(Pos.CENTER_LEFT);
         brand.getStyleClass().add("brand-row");
 
-        side.getChildren().add(brand);
+        // Account UI (moved here from the old custom title bar): avatars of saved accounts + the
+        // active-account / "Sign in" chip. Click the chip to open the Accounts page.
+        accountChip = new Label(accountLabel());
+        accountChip.getStyleClass().add("account-chip");
+        accountChip.setOnMouseClicked(e -> showAccounts());
+        avatarBar = new HBox(6);
+        avatarBar.getStyleClass().add("avatar-bar");
+        avatarBar.setAlignment(Pos.CENTER_LEFT);
+        refreshAvatarBar();
+        HBox accountRow = new HBox(8, avatarBar, accountChip);
+        accountRow.setAlignment(Pos.CENTER_LEFT);
+        accountRow.getStyleClass().add("sidebar-account");
+
+        side.getChildren().addAll(brand, accountRow);
         side.getChildren().addAll(
                 nav("⌂", "Home", this::showHome),
                 nav("▤", "Library", this::showLibrary),
@@ -885,7 +871,7 @@ public class MainApp extends Application {
         Button create = new Button("Create Instance");
         create.getStyleClass().add("btn-outline");
         create.setOnAction(e -> showCreateDialog());
-        Button importBtn = new Button("Import .mrpack");
+        Button importBtn = new Button("Import modpack");
         importBtn.getStyleClass().add("btn-filled");
         importBtn.setOnAction(e -> importMrpackFile());
         HBox header = new HBox(14, title, grow, create, importBtn);
@@ -2552,8 +2538,11 @@ public class MainApp extends Application {
         sortBox.getItems().addAll("Most downloads", "Relevance", "Most followers", "Newest", "Recently updated");
         sortBox.getSelectionModel().selectFirst();
 
+        // Modrinth only — its API is open (no key). CurseForge browsing needs a gated developer key
+        // that gets revoked when shared, so CurseForge is supported via key-free "Import modpack" +
+        // drag-drop instead (see Settings → CurseForge content).
         ChoiceBox<String> sourceBox = new ChoiceBox<>();
-        sourceBox.getItems().addAll("Modrinth", "CurseForge");
+        sourceBox.getItems().add("Modrinth");
         sourceBox.getSelectionModel().selectFirst();
 
         TextField q = new TextField();
@@ -2650,7 +2639,7 @@ public class MainApp extends Application {
         perfBtn.getStyleClass().add("btn-update"); // gold/yellow — stands out as the recommended action
         perfBtn.setOnAction(e -> installPerfPack(instPick.getValue(), perfBtn));
 
-        Button importPack = new Button("📦 Import .mrpack file");
+        Button importPack = new Button("📦 Import modpack file");
         importPack.getStyleClass().add("btn-outline");
         importPack.setOnAction(e -> importMrpackFile());
 
@@ -2940,14 +2929,62 @@ public class MainApp extends Application {
     private void importMrpackFile() {
         if (instanceManager == null) { alert(Alert.AlertType.ERROR, "Error", initError); return; }
         FileChooser fc = new FileChooser();
-        fc.setTitle("Import modpack (.mrpack)");
-        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Modrinth modpack", "*.mrpack"));
+        fc.setTitle("Import modpack (Modrinth .mrpack or CurseForge .zip)");
+        fc.getExtensionFilters().addAll(
+                new FileChooser.ExtensionFilter("Modpack (.mrpack / CurseForge .zip)", "*.mrpack", "*.zip"),
+                new FileChooser.ExtensionFilter("Modrinth modpack", "*.mrpack"),
+                new FileChooser.ExtensionFilter("CurseForge modpack", "*.zip"));
         java.io.File f = fc.showOpenDialog(stage);
         if (f == null) return;
-        Thread t = new Thread(() -> doModpackImport(f.toPath(), f.getName().replaceAll("\\.mrpack$", ""), null),
-                "modpack-import-file");
+        Path path = f.toPath();
+        String fallback = f.getName().replaceAll("\\.(mrpack|zip)$", "");
+        Thread t = new Thread(() -> {
+            // CurseForge .zip (manifest.json) vs Modrinth .mrpack (modrinth.index.json) — route by content.
+            if (CfModpackInstaller.isCfModpack(path)) doCfModpackImport(path, fallback, null);
+            else doModpackImport(path, fallback, null);
+        }, "modpack-import-file");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** Import a CurseForge modpack (.zip) WITHOUT an API key — resolves + downloads via public endpoints. */
+    private void doCfModpackImport(Path zip, String fallbackName, Runnable onReset) {
+        try {
+            CfModpackInstaller.CfIndex idx = CfModpackInstaller.readManifest(zip);
+            String name = idx.name() != null && !idx.name().isBlank() ? idx.name() : fallbackName;
+            Instance inst = instanceManager.create(name, idx.mcVersion(), idx.loader());
+            List<CfModpackInstaller.Missing> missing =
+                    CfModpackInstaller.installInto(zip, idx, instanceManager.instanceDir(inst), msg -> {});
+            int got = idx.files().size() - missing.size();
+            boolean forgey = idx.loader() == Loader.FORGE || idx.loader() == Loader.NEOFORGE;
+            Platform.runLater(() -> {
+                if (onReset != null) onReset.run();
+                showInstances();
+                StringBuilder m = new StringBuilder(name + " → new " + idx.loader().display() + " "
+                        + idx.mcVersion() + " instance.\n" + got + " of " + idx.files().size()
+                        + " mod(s) downloaded, plus the pack's config/overrides.");
+                if (!missing.isEmpty()) {
+                    m.append("\n\n").append(missing.size()).append(" mod(s) couldn't be fetched automatically ")
+                     .append("(the author blocked off-site downloads). Get them from CurseForge and drop the ")
+                     .append(".jar files onto the instance's Mods tab:");
+                    int shown = 0;
+                    for (CfModpackInstaller.Missing ms : missing) {
+                        if (shown++ >= 15) { m.append("\n  …and ").append(missing.size() - 15).append(" more."); break; }
+                        m.append("\n  • curseforge.com/projects/").append(ms.projectId())
+                         .append(" (file ").append(ms.fileId()).append(")");
+                    }
+                }
+                if (forgey) m.append("\n\nNote: ").append(idx.loader().display())
+                        .append(" runs its installer on first Play (downloads + patches the client) — the first launch takes longer.");
+                alert(missing.isEmpty() ? Alert.AlertType.INFORMATION : Alert.AlertType.WARNING,
+                        "CurseForge modpack imported", m.toString());
+            });
+        } catch (Exception ex) {
+            Platform.runLater(() -> {
+                if (onReset != null) onReset.run();
+                alert(Alert.AlertType.ERROR, "CurseForge modpack import failed", String.valueOf(ex.getMessage()));
+            });
+        }
     }
 
     /** Shared back half: read index, create the instance, unpack, report. Runs off the FX thread. */
@@ -3349,26 +3386,16 @@ public class MainApp extends Application {
         Label dir = new Label("Data folder: " + resolveDataDir());
         dir.getStyleClass().add("muted");
 
-        Label cfLbl = new Label("CurseForge API key");
+        Label cfLbl = new Label("CurseForge content");
         cfLbl.getStyleClass().add("card-title-sm");
-        boolean bundledCf = config != null && config.hasBundledCfKey();
-        Label cfHelp = new Label(bundledCf
-                ? "This build ships with a built-in CurseForge key — CurseForge already works. Paste your "
-                  + "own key below only if you want to override it. Stored locally only."
-                : "Lets you browse CurseForge as a second source. Get a free key at "
-                  + "console.curseforge.com → API Keys. Stored locally only.");
+        Label cfHelp = new Label(
+                "No API key needed. CurseForge's developer keys can't be shared and get revoked, so the "
+                + "launcher doesn't use one. To add a CurseForge mod: download its .jar from curseforge.com "
+                + "and drag it onto an instance's Mods tab. For a modpack: download the pack .zip and use "
+                + "\"Import modpack\" — it creates the instance and fetches the mods automatically.");
         cfHelp.getStyleClass().add("muted");
         cfHelp.setWrapText(true);
-        TextField cfKey = new TextField(config != null ? config.userCurseforgeApiKey() : "");
-        cfKey.setPromptText(bundledCf ? "using the built-in key — paste to override" : "paste your CurseForge API key");
-        cfKey.setPrefWidth(420);
-        Button saveCf = new Button("Save Key");
-        saveCf.getStyleClass().add("btn-filled");
-        saveCf.setOnAction(e -> {
-            if (config != null) config.setCurseforgeApiKey(cfKey.getText());
-            alert(Alert.AlertType.INFORMATION, "Saved", "CurseForge API key saved.");
-        });
-        VBox cfBox = new VBox(8, cfLbl, cfHelp, cfKey, saveCf);
+        VBox cfBox = new VBox(8, cfLbl, cfHelp);
         cfBox.setStyle("-fx-padding: 12 0 0 0;");
 
         Label bgLbl = new Label("Launcher background");
@@ -3516,11 +3543,14 @@ public class MainApp extends Application {
         CheckBox neoChk = new CheckBox("Auto-create as NeoForge instead of Forge on 1.20.2+ (Forge has no perf mods there)");
         neoChk.setSelected(config == null || config.autoNeoForge());
         neoChk.setOnAction(e -> { if (config != null) config.setAutoNeoForge(neoChk.isSelected()); });
+        CheckBox maxChk = new CheckBox("Open the launcher maximized on startup");
+        maxChk.setSelected(config == null || config.startMaximized());
+        maxChk.setOnAction(e -> { if (config != null) config.setStartMaximized(maxChk.isSelected()); });
 
         VBox gdSection = new VBox(8, gdLbl,
                 settingRow("Default RAM", new HBox(10, defRam, defRamVal)),
                 settingRow("Default loader", defLoader),
-                minChk, confChk, neoChk);
+                minChk, confChk, neoChk, maxChk);
         gdSection.setStyle("-fx-padding: 12 0 0 0;");
 
         Label tip = new Label("Tip: press Ctrl+K anywhere to open the command palette.");
