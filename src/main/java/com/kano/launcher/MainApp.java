@@ -3,6 +3,7 @@ package com.kano.launcher;
 import com.kano.launcher.auth.MicrosoftAuth;
 import com.kano.launcher.core.AccountManager;
 import com.kano.launcher.core.Config;
+import com.kano.launcher.core.CfAuthException;
 import com.kano.launcher.core.CfModpackInstaller;
 import com.kano.launcher.core.ContentSource;
 import com.kano.launcher.core.CurseForgeClient;
@@ -106,7 +107,7 @@ import java.util.Map;
  */
 public class MainApp extends Application {
 
-    private static final String VERSION = "v1.2.3";
+    private static final String VERSION = "v1.2.4";
     private static final String[] VERSIONS = {"1.21.4", "1.21.1", "1.20.6", "1.20.4", "1.20.1"};
 
     private final StackPane content = new StackPane();
@@ -132,6 +133,7 @@ public class MainApp extends Application {
     private Label statsLabel;
     private Config config;
     private ContentSource browseSource = new ModrinthClient();
+    private boolean cfKeyNoticeShown = false; // so the "update your CurseForge key" prompt shows once, not on every retry
     private ImageView bgView;
 
     // ---- running games (Playing Now) ----
@@ -2493,6 +2495,29 @@ public class MainApp extends Application {
         return new ModrinthClient();
     }
 
+    /**
+     * Tell the user their CurseForge API key stopped working (403) and offer to jump to Settings to
+     * update it. Shown at most once per session (reset when they save a new key) so a debounced search
+     * that fails repeatedly doesn't spam dialogs.
+     */
+    private void notifyCfKeyExpired() {
+        if (cfKeyNoticeShown) return;
+        cfKeyNoticeShown = true;
+        Alert a = new Alert(Alert.AlertType.WARNING,
+                "CurseForge rejected your API key (403) — it was most likely deactivated on their side.\n\n"
+                + "To fix it:\n"
+                + "1. Go to console.curseforge.com → API Keys.\n"
+                + "2. Copy your key (or regenerate it).\n"
+                + "3. Paste it into Settings → CurseForge and click Save Key.\n\n"
+                + "Importing modpacks and dragging in mod .jar files keep working without a key.",
+                ButtonType.OK);
+        a.setHeaderText("Update your CurseForge API key");
+        ButtonType openSettings = new ButtonType("Open Settings");
+        a.getButtonTypes().setAll(openSettings, ButtonType.OK);
+        styleDialog(a);
+        if (a.showAndWait().orElse(ButtonType.OK) == openSettings) showSettings();
+    }
+
     private StringConverter<Instance> instanceConverter() {
         return new StringConverter<>() {
             public String toString(Instance i) { return i == null ? "" : i.name() + " (" + i.version() + ")"; }
@@ -2626,8 +2651,17 @@ public class MainApp extends Application {
                         loadMore.setText("Load more  (" + offset[0] + " / " + res.totalHits() + ")");
                     });
                 } catch (Exception ex) {
+                    boolean cfAuth = ex instanceof CfAuthException || ex.getCause() instanceof CfAuthException;
                     Platform.runLater(() -> {
-                        if (reset) {
+                        if (cfAuth) {
+                            notifyCfKeyExpired();
+                            Label err = new Label("CurseForge rejected your API key (403) — it was likely "
+                                    + "deactivated. Update it in Settings → CurseForge, then try again. "
+                                    + "(Importing modpacks and dragging in .jar files still work without a key.)");
+                            err.getStyleClass().add("muted");
+                            err.setWrapText(true);
+                            results.getChildren().setAll(err);
+                        } else if (reset) {
                             Label err = new Label("Search failed: " + ex.getMessage());
                             err.getStyleClass().add("muted");
                             results.getChildren().setAll(err);
@@ -3424,6 +3458,7 @@ public class MainApp extends Application {
         saveCf.getStyleClass().add("btn-filled");
         saveCf.setOnAction(e -> {
             if (config != null) config.setCurseforgeApiKey(cfKey.getText().trim());
+            cfKeyNoticeShown = false; // new key — allow the "expired key" prompt again if this one also fails
             alert(Alert.AlertType.INFORMATION, "Saved",
                     "CurseForge API key saved. On the Browse page, pick \"CurseForge\" as the source to use it.");
         });
