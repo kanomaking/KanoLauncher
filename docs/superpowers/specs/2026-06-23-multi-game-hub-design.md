@@ -46,7 +46,9 @@ Fields: `id`, `name`, `source` (`STEAM | EPIC | GOG | STANDALONE | MINECRAFT`), 
 Calls every enabled `GameSource`, merges results with the user's saved `games.json` (matching by `source`+`id`), **always preserving user overrides** (favorite, categories, accentHex, custom name/art, launchOptions, startupGame, manually-added games), dedupes, and persists. Single source of truth for the hub. Re-scans on launch and on manual Refresh.
 
 ### Launch routing — `GameRunner.launch(Game)`
-Dispatches by `source`: Steam → `steam://rungameid/<appid>`; Epic → `com.epicgames.launcher://apps/<id>?action=launch`; GOG → its protocol/exe; Standalone → run `exe` (with `launchOptions`/`workingDirOverride`); **Minecraft → existing launch flow, unchanged.** Records `lastPlayed`; playtime tracked best-effort (process watch where a real exe exists).
+Dispatches by `source`: Steam → `steam://rungameid/<appid>`; Epic → `com.epicgames.launcher://apps/<id>?action=launch`; GOG → its protocol/exe; Standalone → run `exe` (with `launchOptions`/`workingDirOverride`); **Minecraft → existing launch flow, unchanged.**
+
+**Last-played vs. playtime — honesty note:** `lastPlayed` is recorded reliably (we know when Play was clicked), so the recents row and sort-by-recent are accurate for every game. **Play *duration* and live "is it running" are best-effort:** protocol-launched games (Steam/Epic) hand off to that platform, so we don't own the child process — duration is approximated by watching for the game's exe name when known, and omitted otherwise (Steam already tracks playtime itself). Minecraft and Standalone games (real owned processes) track both reliably. Sort-by-playtime ranks on whatever was captured and sinks unknowns to the bottom.
 
 ### `ModSourceResolver` (core; see §7)
 Given a `Game`, returns the most reliable mod host + that host's identifier for the game.
@@ -107,7 +109,7 @@ When a game is added/first seen, `ModSourceResolver` identifies the game (name +
 
 1. **Steam Workshop** — if it's a Steam game with Workshop support (keyed off app id): most reliable, first-party.
 2. **Thunderstore** — query its public communities list for a name match (BepInEx/Unity games: Lethal Company, Valheim, Risk of Rain 2…). Clean, Modrinth-like API.
-3. **Nexus Mods** — query its games list (by domain name) for a match (Bethesda/large single-player: Skyrim, Fallout, Stardew, Cyberpunk…). API needs a free user key; premium for automated downloads.
+3. **Nexus Mods** — for Bethesda/large single-player games (Skyrim, Fallout, Stardew, Cyberpunk…). **Note:** the Nexus *API* requires a free personal key, so to keep v1 **keyless**, Nexus discovery uses a small curated map of well-known Nexus games plus a "search Nexus for `<game>`" link — no key needed. (A user key + the Nexus API is only required for the future in-app layer, not for v1 discovery/linking.)
 4. **Modrinth / CurseForge** — Minecraft (already built in).
 5. **Fallback** — no confident match → offer "set source manually / search the web."
 
@@ -124,6 +126,7 @@ The resolved source is stored on the `Game` (`modSource`) and shown on its profi
 - **`games.json`** in the launcher data dir: the merged library — detected games + manually-added games + all user overrides. Merge on every scan by `source`+`id`, preserving overrides; orphaned auto-detected entries (game uninstalled) are flagged "not installed" rather than deleted if the user customized them.
 - **Per-game accent** reuses the existing `Config`/theme engine (one hex → full palette).
 - Existing `config.json` (global settings) gains: startup target (Hub / Last played / game id), and default hub view/sort.
+- **Backward-compatible:** existing users' Minecraft instances and `config.json` are untouched. On first launch of the hub build, `games.json` doesn't exist yet → the first scan creates it (Minecraft always present via `MinecraftSource`, plus whatever Steam/etc. detection finds). Nothing about the current Minecraft data is migrated or moved.
 
 ---
 
