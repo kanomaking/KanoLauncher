@@ -696,20 +696,41 @@ public class MainApp extends Application {
 
     private void showGameLibrary() {
         selectNav(navByName.get("Hub"));
-        java.util.List<com.kano.launcher.core.games.Game> games =
-                gameLibrary != null ? gameLibrary.load() : java.util.List.of();
-        GameLibraryView view = new GameLibraryView(games, this::openGame, this::addGameDialog);
-        content.getChildren().setAll(view.build());
+        // Show the hub immediately with an empty game list so the window paints right away.
+        // GameLibrary.load() forks reg-query processes (SteamSource) and walks disk — doing
+        // that on the FX thread freezes the window. Match the versionManifest pattern: daemon
+        // thread + Platform.runLater to populate once the scan finishes.
+        GameLibraryView emptyView = new GameLibraryView(java.util.List.of(), this::openGame, this::addGameDialog);
+        content.getChildren().setAll(emptyView.build());
+        if (gameLibrary == null) return;
+        Thread t = new Thread(() -> {
+            java.util.List<com.kano.launcher.core.games.Game> games = gameLibrary.load();
+            Platform.runLater(() -> {
+                GameLibraryView view = new GameLibraryView(games, this::openGame, this::addGameDialog);
+                content.getChildren().setAll(view.build());
+            });
+        }, "game-library-load");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void openGame(com.kano.launcher.core.games.Game g) {
+        // Minecraft tile navigates to the Home/MC view — must stay on the FX thread.
         if (g.kind() == com.kano.launcher.core.games.GameKind.MINECRAFT) { showHome(); return; }
-        try {
-            gameRunner.launch(g, this::showHome);
-            if (gameLibrary != null) gameLibrary.recordPlayed(g);
-        } catch (Exception ex) {
-            alert(Alert.AlertType.ERROR, "Couldn't launch", g.name() + ":\n" + ex.getMessage());
-        }
+        // Non-Minecraft: launch via protocol/process off the FX thread so it doesn't freeze the UI.
+        // recordPlayed records "Play was clicked," not "launch confirmed" — a protocol launch
+        // (e.g. steam://) can't be confirmed; we just note the intent.
+        Thread t = new Thread(() -> {
+            try {
+                gameRunner.launch(g, this::showHome);
+                if (gameLibrary != null) gameLibrary.recordPlayed(g);
+            } catch (Exception ex) {
+                Platform.runLater(() ->
+                        alert(Alert.AlertType.ERROR, "Couldn't launch", g.name() + ":\n" + ex.getMessage()));
+            }
+        }, "game-launch");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void addGameDialog() {

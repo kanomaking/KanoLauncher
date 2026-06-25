@@ -14,6 +14,11 @@ public record Game(
         String launchOptions, String workingDirOverride) {
 
     public Game {
+        // FORWARD-COMPAT: Gson's record deserializer passes null for any JSON field absent from an
+        // older games.json (e.g. a field added in plan 1B/1C that doesn't exist in the saved file).
+        // Every collection field added in future plans MUST be null-guarded here exactly like
+        // `categories` is below — or loading an old file will NPE and (via GamesStore's catch)
+        // silently drop ALL manually-added games with no error message.
         categories = categories == null ? List.of() : List.copyOf(categories);
     }
 
