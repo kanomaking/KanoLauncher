@@ -116,6 +116,9 @@ public class MainApp extends Application {
     private volatile VersionManifest versionManifest;
     private AccountManager accountManager;
     private InstanceManager instanceManager;
+    private com.kano.launcher.core.games.GamesStore gamesStore;
+    private com.kano.launcher.core.games.GameLibrary gameLibrary;
+    private final com.kano.launcher.core.games.GameRunner gameRunner = new com.kano.launcher.core.games.GameRunner();
     private String clientId;
     private String initError;
     private Stage stage;
@@ -185,7 +188,7 @@ public class MainApp extends Application {
             ft.play();
         });
 
-        showHome();   // dashboard landing
+        showGameLibrary();   // hub is the new landing view; Minecraft is one tile inside it
 
         // Size the window to FIT the screen so the (undecorated) title bar + window buttons are never
         // pushed off-screen on smaller or DPI-scaled displays. Top-LEFT anchored with a generous
@@ -480,6 +483,11 @@ public class MainApp extends Application {
             instanceManager = new InstanceManager(dir);
             stats = new Stats(dir);
             config = new Config(dir);
+            gamesStore = new com.kano.launcher.core.games.GamesStore(dir);
+            gameLibrary = new com.kano.launcher.core.games.GameLibrary(java.util.List.of(
+                    new com.kano.launcher.core.games.SteamSource(),
+                    new com.kano.launcher.core.games.StandaloneSource(gamesStore),
+                    new com.kano.launcher.core.games.MinecraftSource()), gamesStore);
         } catch (Exception e) {
             initError = "Init failed: " + e.getMessage();
         }
@@ -638,6 +646,7 @@ public class MainApp extends Application {
 
         side.getChildren().addAll(brand, accountRow);
         side.getChildren().addAll(
+                nav("▦", "Hub", this::showGameLibrary),
                 nav("⌂", "Home", this::showHome),
                 nav("▤", "Library", this::showLibrary),
                 nav("◰", "Instances", this::showInstances),
@@ -681,6 +690,40 @@ public class MainApp extends Application {
         if (active != null && !active.getStyleClass().contains("nav-item-active")) {
             active.getStyleClass().add("nav-item-active");
         }
+    }
+
+    // ---- Game Library hub ----
+
+    private void showGameLibrary() {
+        selectNav(navByName.get("Hub"));
+        java.util.List<com.kano.launcher.core.games.Game> games =
+                gameLibrary != null ? gameLibrary.load() : java.util.List.of();
+        GameLibraryView view = new GameLibraryView(games, this::openGame, this::addGameDialog);
+        content.getChildren().setAll(view.build());
+    }
+
+    private void openGame(com.kano.launcher.core.games.Game g) {
+        if (g.kind() == com.kano.launcher.core.games.GameKind.MINECRAFT) { showHome(); return; }
+        try {
+            gameRunner.launch(g, this::showHome);
+            if (gameLibrary != null) gameLibrary.recordPlayed(g);
+        } catch (Exception ex) {
+            alert(Alert.AlertType.ERROR, "Couldn't launch", g.name() + ":\n" + ex.getMessage());
+        }
+    }
+
+    private void addGameDialog() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Add a game — pick its .exe");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Programs", "*.exe"));
+        java.io.File f = fc.showOpenDialog(stage);
+        if (f == null || gamesStore == null) return;
+        String name = f.getName().replaceAll("(?i)\\.exe$", "");
+        String id = name.toLowerCase().replaceAll("[^a-z0-9]+", "-");
+        gamesStore.addManual(com.kano.launcher.core.games.Game.basic(
+                id, name, com.kano.launcher.core.games.GameKind.STANDALONE,
+                f.getParent(), f.getAbsolutePath()));
+        showGameLibrary();
     }
 
     // ---- Home dashboard ----
